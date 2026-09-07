@@ -15,6 +15,9 @@ class UdpPeerSearch {
   Timer? _broadcastTimer;
   bool _isRunning = false;
 
+  final broadcastAddress = InternetAddress('255.255.255.255');
+  final broadcastPort = 53318;
+
   UdpPeerSearch({
     required this.deviceId,
     required this.deviceName,
@@ -28,9 +31,10 @@ class UdpPeerSearch {
 
     _socket = await RawDatagramSocket.bind(
       InternetAddress.anyIPv4,
-      53317,
+      broadcastPort,
       reuseAddress: true,
     );
+    _socket!.broadcastEnabled = true;
 
     _socket!.listen((event) {
       final datagram = _socket!.receive();
@@ -40,7 +44,6 @@ class UdpPeerSearch {
         final text = String.fromCharCodes(datagram.data);
         final json = jsonDecode(text) as Map<String, dynamic>;
 
-        // Ignore our own messages
         // if (json['deviceId'] == deviceId) return;
 
         final peer = PeerInfo(
@@ -75,9 +78,6 @@ class UdpPeerSearch {
       'name': deviceName,
       'port': port,
     });
-
-    final broadcastAddress = InternetAddress('255.255.255.255');
-    const broadcastPort = 53317;
 
     _socket!.send(
       message.codeUnits,
