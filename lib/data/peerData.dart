@@ -1,11 +1,11 @@
-class PeerInfo {
+class PeerData {
   final String deviceId;
   final String name;
   final String ip;
   final int port;
   final DateTime lastSeen;
 
-  PeerInfo({
+  PeerData({
     required this.deviceId,
     required this.name,
     required this.ip,

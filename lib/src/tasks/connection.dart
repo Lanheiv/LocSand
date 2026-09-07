@@ -9,7 +9,7 @@ class UdpPeerSearch {
   final String deviceId;
   final String deviceName;
   final int port; // you can use 0 for now
-  final Function(PeerInfo) onPeerFound;
+  final Function(PeerData) onPeerFound;
 
   RawDatagramSocket? _socket;
   Timer? _broadcastTimer;
@@ -46,7 +46,7 @@ class UdpPeerSearch {
 
         // if (json['deviceId'] == deviceId) return;
 
-        final peer = PeerInfo(
+        final peer = PeerData(
           deviceId: json['deviceId'] as String,
           name: json['name'] as String,
           ip: datagram.address.address,
@@ -65,7 +65,7 @@ class UdpPeerSearch {
     _broadcast();
 
     _broadcastTimer = Timer.periodic(
-      const Duration(seconds: 3),
+      const Duration(seconds: 10),
       (_) => _broadcast(),
     );
   }
