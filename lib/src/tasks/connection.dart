@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:async';
 
-import 'package:locsand/data/peerData.dart';
+import 'package:locsand/data/peer_data.dart';
 
 class UdpPeerSearch {
   final String deviceId;

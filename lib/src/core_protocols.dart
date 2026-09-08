@@ -1,6 +1,6 @@
 import 'dart:developer';
 import 'package:locsand/src/tasks/connection.dart';
-import 'package:locsand/data/sessionData.dart';
+import 'package:locsand/data/session_data.dart';
 
 UdpPeerSearch? search; // variable that can hold an object
 

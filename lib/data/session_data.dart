@@ -1,4 +1,4 @@
-import 'package:locsand/data/peerData.dart';
+import 'package:locsand/data/peer_data.dart';
 
 class SessionData {
   static final SessionData _instance = SessionData._internal();

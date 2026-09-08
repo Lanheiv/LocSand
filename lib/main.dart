@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:locsand/src/coreProtocols.dart';
+import 'package:locsand/src/core_protocols.dart';
+import 'package:locsand/pages/home.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,7 +17,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Home page',
-      // home: HomePage(),
+      home: const HomeScreen(),
     );
   }
 }
