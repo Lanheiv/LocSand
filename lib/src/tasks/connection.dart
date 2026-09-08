@@ -1,4 +1,3 @@
-import 'dart:developer';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:async';
@@ -8,7 +7,7 @@ import 'package:locsand/data/peerData.dart';
 class UdpPeerSearch {
   final String deviceId;
   final String deviceName;
-  final int port; // you can use 0 for now
+  final int port;
   final Function(PeerData) onPeerFound;
 
   RawDatagramSocket? _socket;
@@ -44,7 +43,7 @@ class UdpPeerSearch {
         final text = String.fromCharCodes(datagram.data);
         final json = jsonDecode(text) as Map<String, dynamic>;
 
-        // if (json['deviceId'] == deviceId) return;
+        //if (json['deviceId'] == deviceId) return;
 
         final peer = PeerData(
           deviceId: json['deviceId'] as String,
@@ -65,7 +64,7 @@ class UdpPeerSearch {
     _broadcast();
 
     _broadcastTimer = Timer.periodic(
-      const Duration(seconds: 10),
+      const Duration(seconds: 10), // NOTE first 30s evey 3s send later evry 30s. if requested then send brotcast
       (_) => _broadcast(),
     );
   }
