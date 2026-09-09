@@ -1,0 +1,12 @@
+[node]
+name = "test-pc"
+id = "device-1"
+
+[network]
+udp_port = 5000
+tcp_port = 5001
+multicast_port = 5002
+
+[discovery]
+broadcast_address = "255.255.255.255"
+enabled = true

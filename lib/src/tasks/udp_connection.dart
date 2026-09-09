@@ -7,20 +7,23 @@ import 'package:locsand/data/peer_data.dart';
 class UdpPeerSearch {
   final String deviceId;
   final String deviceName;
-  final int port;
+  final int udpPort;
+  final int tcpPort;
+  final InternetAddress broadcastAddress;
+  final bool broadcastEnabled;
   final Function(PeerData) onPeerFound;
 
   RawDatagramSocket? _socket;
   Timer? _broadcastTimer;
   bool _isRunning = false;
 
-  final broadcastAddress = InternetAddress('255.255.255.255');
-  final broadcastPort = 53318;
-
   UdpPeerSearch({
     required this.deviceId,
     required this.deviceName,
-    required this.port,
+    required this.tcpPort,
+    required this.udpPort,
+    required this.broadcastAddress,
+    required this.broadcastEnabled,
     required this.onPeerFound,
   });
 
@@ -30,7 +33,7 @@ class UdpPeerSearch {
 
     _socket = await RawDatagramSocket.bind(
       InternetAddress.anyIPv4,
-      broadcastPort,
+      udpPort,
       reuseAddress: true,
     );
     _socket!.broadcastEnabled = true;
@@ -57,7 +60,9 @@ class UdpPeerSearch {
       } catch (_) {}
     });
 
-    _startBroadcast();
+    if(broadcastEnabled) {
+      _startBroadcast();
+    }
   }
 
   void _startBroadcast() {
@@ -75,13 +80,13 @@ class UdpPeerSearch {
     final message = jsonEncode({
       'deviceId': deviceId,
       'name': deviceName,
-      'port': port,
+      'port': tcpPort,
     });
 
     _socket!.send(
       message.codeUnits,
       broadcastAddress,
-      broadcastPort,
+      udpPort,
     );
   }
 
