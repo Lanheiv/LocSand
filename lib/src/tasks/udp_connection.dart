@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:async';
 
-import 'package:locsand/data/peer_data.dart';
+import 'package:locsand/src/data/peer_data.dart';
 
 class UdpPeerSearch {
   final String deviceId;
@@ -46,7 +46,7 @@ class UdpPeerSearch {
         final text = String.fromCharCodes(datagram.data);
         final json = jsonDecode(text) as Map<String, dynamic>;
 
-        //if (json['deviceId'] == deviceId) return;
+        if (json['deviceId'] == deviceId) return;
 
         final peer = PeerData(
           deviceId: json['deviceId'] as String,
@@ -68,9 +68,22 @@ class UdpPeerSearch {
   void _startBroadcast() {
     _broadcast();
 
+    int elapsedSeconds = 0;
+
     _broadcastTimer = Timer.periodic(
-      const Duration(seconds: 10), // NOTE first 30s evey 3s send later evry 30s. if requested then send brotcast
-      (_) => _broadcast(),
+      const Duration(seconds: 1), (_) {
+        elapsedSeconds += 1;
+
+        if (elapsedSeconds <= 30) {
+          if (elapsedSeconds % 3 == 0) {
+            _broadcast();
+          }
+        } else {
+          if ((elapsedSeconds - 30) % 10 == 0) {
+            _broadcast();
+          }
+        }
+      },
     );
   }
 

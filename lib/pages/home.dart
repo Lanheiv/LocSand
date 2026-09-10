@@ -1,7 +1,9 @@
+// pages/home.dart
 import 'package:flutter/material.dart';
-
-import 'package:locsand/data/session_data.dart';
-import 'package:locsand/data/peer_data.dart';
+import 'package:locsand/src/data/session_data.dart';
+import 'package:locsand/src/data/peer_data.dart';
+import 'package:locsand/src/tasks/tcp_connection.dart';
+import 'dart:developer';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -11,8 +13,52 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Call this from anywhere (e.g., from UDP service) to refresh UI
   void refresh() {
+    if (mounted) setState(() {});
+  }
+
+  void _connectToPeer(PeerData peer) async {
+    try {
+      final conn = await SessionData().connectToPeer(
+        peer.deviceId,
+        onMessage: (msg) {
+          log("Message from ${peer.name}: $msg");
+          // Here you can update some state / show snackbar / etc.
+          if (mounted) setState(() {});
+        },
+        onError: (err) {
+          log("TCP error ${peer.name}: $err");
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("Connection error: $err")),
+            );
+          }
+        },
+        onDisconnected: () {
+          log("Disconnected from ${peer.name}");
+          if (mounted) setState(() {});
+        },
+      );
+
+      // Optional: send a hello message after connect
+      conn.send({
+        'type': 'hello',
+        'text': 'Hi from ${peer.name}',
+      });
+
+      if (mounted) setState(() {});
+    } catch (e) {
+      log("Failed to connect to ${peer.name}: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Connect failed: $e")),
+        );
+      }
+    }
+  }
+
+  void _disconnectFromPeer(PeerData peer) {
+    SessionData().disconnectFromPeer(peer.deviceId);
     if (mounted) setState(() {});
   }
 
@@ -54,14 +100,45 @@ class _HomeScreenState extends State<HomeScreen> {
                       itemCount: peers.length,
                       itemBuilder: (context, index) {
                         final p = peers[index];
+                        final conn = session.getTcpConnection(p.deviceId);
+                        final connected = conn != null && conn.isConnected;
+
                         return Card(
                           margin: const EdgeInsets.symmetric(vertical: 4),
                           child: ListTile(
                             title: Text(p.name),
                             subtitle: Text('${p.ip}:${p.port}'),
-                            trailing: Text(
-                              p.deviceId,
-                              style: const TextStyle(fontSize: 10),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  connected ? 'Connected' : 'Idle',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: connected
+                                        ? Colors.green
+                                        : Colors.grey,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: Icon(
+                                    connected
+                                        ? Icons.link_off
+                                        : Icons.link,
+                                  ),
+                                  onPressed: () {
+                                    if (connected) {
+                                      _disconnectFromPeer(p);
+                                    } else {
+                                      _connectToPeer(p);
+                                    }
+                                  },
+                                  tooltip: connected
+                                      ? 'Disconnect'
+                                      : 'Connect',
+                                ),
+                              ],
                             ),
                           ),
                         );
