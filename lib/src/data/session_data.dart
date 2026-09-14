@@ -1,4 +1,6 @@
 // data/session_data.dart
+import 'dart:async';
+
 import 'package:locsand/src/data/peer_data.dart';
 import 'package:locsand/src/tasks/tcp_connection.dart';
 
@@ -13,9 +15,10 @@ class SessionData {
   DateTime? userOnlineTime;
 
   final Map<String, PeerData> peers = {};
-
-  // One TCP connection per deviceId (only when user connects)
   final Map<String, TcpPeerConnection> _tcpConnections = {};
+
+  void Function(String deviceId, String name, void Function(bool accept) respond)?
+      onIncomingRequest;
 
   void clear() {
     userId = null;
@@ -38,20 +41,17 @@ class SessionData {
   PeerData? getPeer(String deviceId) => peers[deviceId];
   List<PeerData> get allPeers => peers.values.toList();
 
-  TcpPeerConnection? getTcpConnection(String deviceId) =>
-      _tcpConnections[deviceId];
+  TcpPeerConnection? getTcpConnection(String deviceId) => _tcpConnections[deviceId];
 
-  /// Create TCP connection only when user chooses to connect.
   Future<TcpPeerConnection> connectToPeer(
     String deviceId, {
     Function(Map<String, dynamic>)? onMessage,
     Function(Object)? onError,
     Function()? onDisconnected,
   }) async {
-    // If already connected, reuse
-    var conn = _tcpConnections[deviceId];
-    if (conn != null && conn.isConnected) {
-      return conn;
+    var existing = _tcpConnections[deviceId];
+    if (existing != null && existing.isConnected) {
+      return existing;
     }
 
     final peer = getPeer(deviceId);
@@ -59,25 +59,58 @@ class SessionData {
       throw StateError("Peer $deviceId not found");
     }
 
-    conn = TcpPeerConnection(
+    final response = Completer<bool>();
+
+    final conn = TcpPeerConnection(
       deviceId: deviceId,
       ip: peer.ip,
       port: peer.port,
-      onMessage: onMessage,
+      onMessage: (msg) {
+        final type = msg['type'];
+        if (!response.isCompleted && (type == 'accept' || type == 'reject')) {
+          response.complete(type == 'accept');
+          return;
+        }
+        onMessage?.call(msg);
+      },
       onError: onError,
       onDisconnected: () {
-        onDisconnected?.call();
+        if (!response.isCompleted) response.complete(false);
         _tcpConnections.remove(deviceId);
+        onDisconnected?.call();
       },
     );
 
     await conn.connect();
+
+    conn.send({'type': 'request', 'deviceId': userId, 'name': userName});
+
+    final accepted = await response.future.timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => false,
+    );
+
+    if (!accepted) {
+      await conn.disconnect();
+      throw StateError("Connection request was declined or timed out");
+    }
+
     _tcpConnections[deviceId] = conn;
     return conn;
   }
 
-  void disconnectFromPeer(String deviceId) {
+  void registerIncomingConnection(String deviceId, TcpPeerConnection conn) {
+    final existing = _tcpConnections[deviceId];
+    if (existing != null && existing != conn) {
+      existing.disconnect();
+    }
+    _tcpConnections[deviceId] = conn;
+  }
+
+  void disconnectFromPeer(String deviceId, {bool closeSocket = true}) {
     final conn = _tcpConnections.remove(deviceId);
-    conn?.disconnect();
+    if (closeSocket) {
+      conn?.disconnect();
+    }
   }
 }

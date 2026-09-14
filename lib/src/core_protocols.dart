@@ -1,10 +1,12 @@
 import 'dart:developer';
 import 'dart:io';
 import 'package:locsand/src/tasks/udp_connection.dart';
+import 'package:locsand/src/tasks/tcp_server.dart';
 import 'package:locsand/src/data/session_data.dart';
 import 'package:locsand/src/helpers/load_config.dart';
 
 UdpPeerSearch? search; // variable that can hold an object
+TcpPeerServer? tcpServer;
 
 Future<void> coreProtocols() async { // background functions run (UDP serch and request)
   final config = await loadConfig();
@@ -20,6 +22,17 @@ Future<void> coreProtocols() async { // background functions run (UDP serch and 
   final broadcastAddress = InternetAddress((discovery['broadcast_address'] as String));
   final broadcastEnabled = discovery['enabled'] as bool;
 
+  SessionData().userId = nodeID;
+  SessionData().userName = nodeName;
+  SessionData().userOnlineTime = DateTime.now();
+
+  tcpServer = TcpPeerServer(port: tcpPort);
+  try {
+    await tcpServer!.start();
+  } catch (e) {
+    log("TCP server errore: $e");
+  }
+
   search = UdpPeerSearch(
     deviceId: nodeID,
     deviceName: nodeName,
@@ -34,5 +47,9 @@ Future<void> coreProtocols() async { // background functions run (UDP serch and 
     },
   );
 
-  search!.start();
+  try {
+    await search!.start();
+  } catch (e) {
+    log("UDP discovery errore: $e");
+  }
 }

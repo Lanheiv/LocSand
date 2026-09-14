@@ -1,25 +1,26 @@
-// src/tasks/tcp_connection.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
+import 'package:locsand/src/helpers/tls_context.dart';
+
 class TcpPeerConnection {
-  final String deviceId;
+  String? deviceId;
+
   final String ip;
   final int port;
 
   Socket? _socket;
-  StreamSubscription<String>? _subscription; // <-- change type
+  StreamSubscription<String>? _subscription;
   bool _connected = false;
 
-  // Callbacks
   final Function(Map<String, dynamic> message)? onMessage;
   final Function(Object error)? onError;
   final Function()? onDisconnected;
 
   TcpPeerConnection({
-    required this.deviceId,
+    this.deviceId,
     required this.ip,
     required this.port,
     this.onMessage,
@@ -27,17 +28,33 @@ class TcpPeerConnection {
     this.onDisconnected,
   });
 
+  TcpPeerConnection.fromSocket({
+    required Socket socket,
+    this.onMessage,
+    this.onError,
+    this.onDisconnected,
+  })  : ip = socket.remoteAddress.address,
+        port = socket.remotePort {
+    _socket = socket;
+    _connected = true;
+    _listen();
+  }
+
   bool get isConnected => _connected && _socket != null;
 
   Future<void> connect({Duration timeout = const Duration(seconds: 5)}) async {
     if (_connected) return;
 
-    _socket = await Socket.connect(ip, port, timeout: timeout);
+    final context = await TlsContext.clientContext();
+    _socket = await SecureSocket.connect(ip, port, context: context, timeout: timeout);
     _connected = true;
-    log("TCP connected to $deviceId at $ip:$port");
+    log("TCP (TLS) connected to ${deviceId ?? ip}:$port");
+    _listen();
+  }
 
-    // Listen to incoming data as lines of text
+  void _listen() {
     _subscription = _socket!
+        .cast<List<int>>()
         .map((bytes) => utf8.decode(bytes))
         .transform(const LineSplitter())
         .listen(
@@ -46,17 +63,17 @@ class TcpPeerConnection {
               final json = jsonDecode(line) as Map<String, dynamic>;
               onMessage?.call(json);
             } catch (e) {
-              log("Bad message from $deviceId: $e");
+              log("Bad message from ${deviceId ?? ip}: $e");
             }
           },
           onError: (Object e) {
-            log("TCP error $deviceId: $e");
+            log("TCP error ${deviceId ?? ip}: $e");
             _connected = false;
             onError?.call(e);
             onDisconnected?.call();
           },
           onDone: () {
-            log("TCP done $deviceId");
+            log("TCP done ${deviceId ?? ip}");
             _connected = false;
             onDisconnected?.call();
           },
@@ -66,10 +83,9 @@ class TcpPeerConnection {
 
   void send(Map<String, dynamic> message) {
     if (!_connected || _socket == null) {
-      throw StateError("TCP not connected for $deviceId");
+      throw StateError("TCP not connected for ${deviceId ?? ip}");
     }
-    final line = jsonEncode(message);
-    _socket!.write("$line\n");
+    _socket!.write("${jsonEncode(message)}\n");
   }
 
   Future<void> disconnect() async {
