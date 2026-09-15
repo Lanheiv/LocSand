@@ -1,10 +1,11 @@
 // data/session_data.dart
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:locsand/src/data/peer_data.dart';
 import 'package:locsand/src/tasks/tcp_connection.dart';
 
-class SessionData {
+class SessionData extends ChangeNotifier {
   static final SessionData _instance = SessionData._internal();
   factory SessionData() => _instance;
   SessionData._internal();
@@ -31,11 +32,13 @@ class SessionData {
       conn.disconnect();
     }
     _tcpConnections.clear();
+    notifyListeners();
   }
 
   void addOrUpdatePeer(PeerData peer) {
     peers[peer.deviceId] = peer;
     userOnlineTime = DateTime.now();
+    notifyListeners();
   }
 
   PeerData? getPeer(String deviceId) => peers[deviceId];
@@ -78,6 +81,7 @@ class SessionData {
         if (!response.isCompleted) response.complete(false);
         _tcpConnections.remove(deviceId);
         onDisconnected?.call();
+        notifyListeners();
       },
     );
 
@@ -96,6 +100,7 @@ class SessionData {
     }
 
     _tcpConnections[deviceId] = conn;
+    notifyListeners();
     return conn;
   }
 
@@ -105,6 +110,7 @@ class SessionData {
       existing.disconnect();
     }
     _tcpConnections[deviceId] = conn;
+    notifyListeners();
   }
 
   void disconnectFromPeer(String deviceId, {bool closeSocket = true}) {
@@ -112,5 +118,6 @@ class SessionData {
     if (closeSocket) {
       conn?.disconnect();
     }
+    notifyListeners();
   }
 }

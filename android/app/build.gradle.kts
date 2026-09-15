@@ -6,7 +6,8 @@ plugins {
 
 android {
     namespace = "com.example.locsand"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37
+    // compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

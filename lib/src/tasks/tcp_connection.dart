@@ -46,7 +46,13 @@ class TcpPeerConnection {
     if (_connected) return;
 
     final context = await TlsContext.clientContext();
-    _socket = await SecureSocket.connect(ip, port, context: context, timeout: timeout);
+    _socket = await SecureSocket.connect(
+      ip,
+      port,
+      context: context,
+      timeout: timeout,
+      onBadCertificate: (cert) => true,
+    );
     _connected = true;
     log("TCP (TLS) connected to ${deviceId ?? ip}:$port");
     _listen();

@@ -18,6 +18,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
 
+    // Rebuild whenever SessionData changes (e.g. a new peer is discovered
+    // over UDP, or a connection's status changes).
+    SessionData().addListener(_onSessionChanged);
+
     // Whenever a peer sends us a connection request, show a popup asking
     // whether to accept it.
     SessionData().onIncomingRequest = (deviceId, name, respond) {
@@ -58,8 +62,13 @@ class _HomeScreenState extends State<HomeScreen> {
     };
   }
 
+  void _onSessionChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    SessionData().removeListener(_onSessionChanged);
     SessionData().onIncomingRequest = null;
     super.dispose();
   }
