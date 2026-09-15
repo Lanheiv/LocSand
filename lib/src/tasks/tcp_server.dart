@@ -36,14 +36,13 @@ class TcpPeerServer {
 
   void _handleIncoming(SecureSocket socket) {
     late final TcpPeerConnection conn;
-    bool accepted = false; // becomes true only after the app says yes
+    bool accepted = false;
 
     conn = TcpPeerConnection.fromSocket(
       socket: socket,
       onMessage: (msg) {
         final type = msg['type'];
 
-        // First message must be a connection request.
         if (!accepted) {
           if (type != 'request') {
             log("Ignoring message before a connection request: $msg");
@@ -61,7 +60,6 @@ class TcpPeerServer {
 
           final handler = SessionData().onIncomingRequest;
           if (handler == null) {
-            // Nobody is listening for requests — refuse by default.
             conn.send({'type': 'reject'});
             conn.disconnect();
             return;
@@ -82,7 +80,6 @@ class TcpPeerServer {
           return;
         }
 
-        // Already accepted — this is a normal application message.
         log("Message from ${conn.deviceId}: $msg");
       },
       onDisconnected: () {

@@ -17,6 +17,9 @@ class UdpPeerSearch {
   Timer? _broadcastTimer;
   bool _isRunning = false;
 
+  String requestMassage = "massageRequest";
+  String devicMassage = "devicInfo";
+
   UdpPeerSearch({
     required this.deviceId,
     required this.deviceName,
@@ -48,21 +51,28 @@ class UdpPeerSearch {
         final text = String.fromCharCodes(datagram.data);
         final json = jsonDecode(text) as Map<String, dynamic>;
 
-        if (json['deviceId'] == deviceId) return;
+        String messageType = json['messageType'];
 
-        final peer = PeerData(
-          deviceId: json['deviceId'] as String,
-          name: json['name'] as String,
-          ip: datagram.address.address,
-          port: json['port'] as int,
-          lastSeen: DateTime.now(),
-        );
+        if (messageType == "devicInfo") {
+          if (json['deviceId'] == deviceId) return;
 
-        onPeerFound(peer);
+          final peer = PeerData(
+            deviceId: json['deviceId'] as String,
+            name: json['name'] as String,
+            ip: datagram.address.address,
+            port: json['port'] as int,
+            lastSeen: DateTime.now(),
+          );
+
+          onPeerFound(peer);
+        } else if (messageType == "massageRequest") {
+          _broadcast();
+        }
       } catch (_) {}
     });
 
     if(broadcastEnabled) {
+      _broadcastRequest();
       _startBroadcast();
     }
   }
@@ -70,22 +80,24 @@ class UdpPeerSearch {
   void _startBroadcast() {
     _broadcast();
 
-    int elapsedSeconds = 0;
-
     _broadcastTimer = Timer.periodic(
-      const Duration(seconds: 1), (_) {
-        elapsedSeconds += 1;
+      const Duration(seconds: 30),
+      (_) => _broadcast(),
+    );
+  }
 
-        if (elapsedSeconds <= 30) {
-          if (elapsedSeconds % 3 == 0) {
-            _broadcast();
-          }
-        } else {
-          if ((elapsedSeconds - 30) % 10 == 0) {
-            _broadcast();
-          }
-        }
-      },
+  void _broadcastRequest() {
+    if (_socket == null) return;
+
+    final message = jsonEncode({
+      'messageType': requestMassage,
+      'deviceId': deviceId,
+    });
+
+    _socket!.send(
+      message.codeUnits,
+      broadcastAddress,
+      udpPort,
     );
   }
 
@@ -93,6 +105,7 @@ class UdpPeerSearch {
     if (_socket == null) return;
 
     final message = jsonEncode({
+      'messageType': devicMassage,
       'deviceId': deviceId,
       'name': deviceName,
       'port': tcpPort,
