@@ -1,9 +1,3 @@
-// src/tasks/tcp_server.dart
-//
-// Listens for incoming encrypted connections. When someone connects and
-// sends a "request", we don't just let them in — we ask the app (via
-// SessionData().onIncomingRequest) whether to accept them first.
-
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';

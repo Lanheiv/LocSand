@@ -17,7 +17,7 @@ class UdpPeerSearch {
   Timer? _broadcastTimer;
   bool _isRunning = false;
 
-  String requestMassage = "massageRequest";
+  String requestUsers = "userRequest";
   String devicMassage = "devicInfo";
 
   UdpPeerSearch({
@@ -65,7 +65,7 @@ class UdpPeerSearch {
           );
 
           onPeerFound(peer);
-        } else if (messageType == "massageRequest") {
+        } else if (messageType == "userRequest") {
           _broadcast();
         }
       } catch (_) {}
@@ -90,7 +90,7 @@ class UdpPeerSearch {
     if (_socket == null) return;
 
     final message = jsonEncode({
-      'messageType': requestMassage,
+      'messageType': requestUsers,
       'deviceId': deviceId,
     });
 
