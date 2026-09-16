@@ -20,7 +20,7 @@ class TcpPeerServer {
 
     final context = await TlsContext.serverContext();
     _server = await SecureServerSocket.bind(InternetAddress.anyIPv4, port, context);
-    log("TCP (TLS) server listening on port $port");
+    log("TCP server listening on port $port");
 
     _subscription = _server!.listen(
       _handleIncoming,

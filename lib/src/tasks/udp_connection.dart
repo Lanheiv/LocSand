@@ -5,12 +5,11 @@ import 'dart:async';
 import 'package:locsand/src/data/peer_data.dart';
 
 class UdpPeerSearch {
-  final String deviceId;
-  final String deviceName;
-  final int udpPort;
-  final int tcpPort;
+  final String deviceId, deviceName;
+  final int udpPort, tcpPort;
   final InternetAddress broadcastAddress;
-  final bool broadcastEnabled;
+  final bool enabledBroadcast;
+  
   final Function(PeerData) onPeerFound;
 
   RawDatagramSocket? _socket;
@@ -26,7 +25,7 @@ class UdpPeerSearch {
     required this.tcpPort,
     required this.udpPort,
     required this.broadcastAddress,
-    required this.broadcastEnabled,
+    required this.enabledBroadcast,
     required this.onPeerFound,
   });
 
@@ -65,13 +64,13 @@ class UdpPeerSearch {
           );
 
           onPeerFound(peer);
-        } else if (messageType == "userRequest") {
+        } else if (messageType == "userRequest" && enabledBroadcast) {
           _broadcast();
         }
       } catch (_) {}
     });
 
-    if(broadcastEnabled) {
+    if(enabledBroadcast) {
       _broadcastRequest();
       _startBroadcast();
     }

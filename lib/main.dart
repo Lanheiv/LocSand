@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:locsand/src/core_protocols.dart';
 import 'package:locsand/pages/home.dart';
@@ -9,7 +8,7 @@ void main() async {
   try {
     await coreProtocols();
   } catch (e) {
-    debugPrint("coreProtocols() failed to start: $e");
+    debugPrint("coreProtocols failed to start: $e");
   }
 
   runApp(const MyApp());

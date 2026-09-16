@@ -5,10 +5,10 @@ import 'package:locsand/src/tasks/tcp_server.dart';
 import 'package:locsand/src/data/session_data.dart';
 import 'package:locsand/src/helpers/load_config.dart';
 
-UdpPeerSearch? search; // variable that can hold an object
+UdpPeerSearch? search;
 TcpPeerServer? tcpServer;
 
-Future<void> coreProtocols() async { // background functions run (UDP serch and request)
+Future<void> coreProtocols() async {
   final config = await loadConfig();
 
   final node = config['node'] as Map<String, dynamic>;
@@ -26,12 +26,9 @@ Future<void> coreProtocols() async { // background functions run (UDP serch and 
   SessionData().userName = nodeName;
   SessionData().userOnlineTime = DateTime.now();
 
-  tcpServer = TcpPeerServer(port: tcpPort);
-  try {
-    await tcpServer!.start();
-  } catch (e) {
-    log("TCP server errore: $e");
-  }
+  tcpServer = TcpPeerServer(
+    port: tcpPort
+  );
 
   search = UdpPeerSearch(
     deviceId: nodeID,
@@ -39,9 +36,9 @@ Future<void> coreProtocols() async { // background functions run (UDP serch and 
     tcpPort: tcpPort,
     udpPort: udpPort,
     broadcastAddress: broadcastAddress,
-    broadcastEnabled: broadcastEnabled,
+    enabledBroadcast: broadcastEnabled,
     onPeerFound: (peer) {
-      log("Found peer: ${peer.name} at ${peer.ip}");
+      log("found peer: ${peer.name}");
       
       SessionData().addOrUpdatePeer(peer);
     },
@@ -51,5 +48,11 @@ Future<void> coreProtocols() async { // background functions run (UDP serch and 
     await search!.start();
   } catch (e) {
     log("UDP discovery errore: $e");
+  }
+
+  try {
+    await tcpServer!.start();
+  } catch (e) {
+    log("TCP server errore: $e");
   }
 }
