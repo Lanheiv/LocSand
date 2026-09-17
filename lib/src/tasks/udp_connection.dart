@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:async';
@@ -67,7 +68,9 @@ class UdpPeerSearch {
         } else if (messageType == "userRequest" && enabledBroadcast) {
           _broadcast();
         }
-      } catch (_) {}
+      } catch (e) {
+        log("bad UDP packet from ${datagram.address.address}: $e");
+      }
     });
 
     if(enabledBroadcast) {

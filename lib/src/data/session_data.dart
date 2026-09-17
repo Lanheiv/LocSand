@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:locsand/src/data/peer_data.dart';
+import 'package:locsand/src/data/chat_message.dart';
 import 'package:locsand/src/tasks/tcp_connection.dart';
 
 class SessionData extends ChangeNotifier {
@@ -17,6 +18,9 @@ class SessionData extends ChangeNotifier {
   final Map<String, PeerData> peers = {};
   final Map<String, TcpPeerConnection> _tcpConnections = {};
 
+  // deviceId -> list of chat messages exchanged with that peer
+  final Map<String, List<ChatMessage>> chatMessages = {};
+
   void Function(String deviceId, String name, void Function(bool accept) respond)?
       onIncomingRequest;
 
@@ -26,6 +30,7 @@ class SessionData extends ChangeNotifier {
     userIp = null;
     userOnlineTime = null;
     peers.clear();
+    chatMessages.clear();
 
     for (final conn in _tcpConnections.values) {
       conn.disconnect();
@@ -73,6 +78,10 @@ class SessionData extends ChangeNotifier {
           response.complete(type == 'accept');
           return;
         }
+        if (type == 'chat') {
+          receiveChatMessage(deviceId, msg['text'] as String? ?? '');
+          return;
+        }
         onMessage?.call(msg);
       },
       onError: onError,
@@ -117,6 +126,27 @@ class SessionData extends ChangeNotifier {
     if (closeSocket) {
       conn?.disconnect();
     }
+    notifyListeners();
+  }
+
+  List<ChatMessage> getChatMessages(String deviceId) => chatMessages[deviceId] ?? [];
+
+  void receiveChatMessage(String deviceId, String text) {
+    chatMessages.putIfAbsent(deviceId, () => []).add(
+          ChatMessage(text: text, fromMe: false, time: DateTime.now()),
+        );
+    notifyListeners();
+  }
+
+  void sendChatMessage(String deviceId, String text) {
+    final conn = _tcpConnections[deviceId];
+    if (conn == null || !conn.isConnected) {
+      throw StateError("Not connected to $deviceId");
+    }
+    conn.send({'type': 'chat', 'text': text});
+    chatMessages.putIfAbsent(deviceId, () => []).add(
+          ChatMessage(text: text, fromMe: true, time: DateTime.now()),
+        );
     notifyListeners();
   }
 }

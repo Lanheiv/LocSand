@@ -16,8 +16,6 @@ class CertGenerator {
     final privateKey = pair.privateKey as RSAPrivateKey;
     final publicKey = pair.publicKey as RSAPublicKey;
 
-    // Build a real CSR first, then self-sign it. The previous code passed
-    // an always-empty string here, which produced an invalid certificate.
     final csrPem = X509Utils.generateRsaCsrPem(
       {'CN': 'locsand-device'},
       privateKey,

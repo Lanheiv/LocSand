@@ -74,6 +74,11 @@ class TcpPeerServer {
           return;
         }
 
+        if (type == 'chat') {
+          SessionData().receiveChatMessage(conn.deviceId!, msg['text'] as String? ?? '');
+          return;
+        }
+
         log("Message from ${conn.deviceId}: $msg");
       },
       onDisconnected: () {
