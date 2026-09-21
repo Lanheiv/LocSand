@@ -10,7 +10,6 @@ import 'package:locsand/view/pages/setting_page.dart';
 import 'package:locsand/view/pages/home_page.dart';
 
 import 'package:locsand/view/components/show_dialog.dart';
-import 'package:locsand/view/components/peer_list.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -30,8 +29,6 @@ class _HomeScreenState extends State<HomeScreen> {
         const SettingPage(),
       ];
 
-  // Titles shown in the AppBar, kept in sync with `pages` and the
-  // bottom navigation items below.
   final List<String> pageTitles = const [
     'Home',
     'Chats',

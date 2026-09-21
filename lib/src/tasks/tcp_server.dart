@@ -19,6 +19,27 @@ class TcpPeerServer {
     if (_server != null) return;
 
     final context = await TlsContext.serverContext();
+
+    // NOTE on incoming-connection identity: we intentionally do NOT set
+    // requestClientCertificate here. Dart's TLS stack verifies any client
+    // certificate that is presented against the server's trusted roots as
+    // soon as it's requested — even with requireClientCertificate: false —
+    // and since every device's certificate is self-signed with no shared
+    // CA, that verification always fails and aborts the whole handshake
+    // (confirmed via CERTIFICATE_VERIFY_FAILED in testing). Mutual TLS
+    // with self-signed, dynamically-trusted (TOFU) certificates isn't
+    // something the current API supports without pre-provisioning every
+    // peer's certificate as trusted ahead of time, which would defeat the
+    // point of trust-on-first-use.
+    //
+    // So: the outbound direction (this device connecting to a peer) is
+    // cryptographically verified via PeerTrustStore in tcp_connection.dart.
+    // The inbound direction (a peer connecting to us) is not — the
+    // deviceId in the 'request' message is an unauthenticated claim, and
+    // the only real gate on it is the user's manual accept/decline in the
+    // connection-request dialog. That's a real limitation, not a full
+    // fix, and should be called out as such (e.g. in the thesis writeup)
+    // rather than presented as symmetric protection.
     _server = await SecureServerSocket.bind(InternetAddress.anyIPv4, port, context);
     log("TCP server listening on port $port");
 

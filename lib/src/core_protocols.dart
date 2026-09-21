@@ -55,4 +55,6 @@ Future<void> coreProtocols() async {
   } catch (e) {
     log("TCP server errore: $e");
   }
+
+  SessionData().startPeerPruning();
 }

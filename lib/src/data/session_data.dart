@@ -24,6 +24,38 @@ class SessionData extends ChangeNotifier {
   void Function(String deviceId, String name, void Function(bool accept) respond)?
       onIncomingRequest;
 
+  Timer? _pruneTimer;
+
+  void startPeerPruning({
+    Duration interval = const Duration(seconds: 15),
+    Duration staleAfter = const Duration(seconds: 90),
+  }) {
+    _pruneTimer?.cancel();
+    _pruneTimer = Timer.periodic(interval, (_) => _prunePeers(staleAfter));
+  }
+
+  void stopPeerPruning() {
+    _pruneTimer?.cancel();
+    _pruneTimer = null;
+  }
+
+  void _prunePeers(Duration staleAfter) {
+    final now = DateTime.now();
+    final staleIds = peers.entries
+        .where((e) =>
+            now.difference(e.value.lastSeen) > staleAfter &&
+            !(_tcpConnections[e.key]?.isConnected ?? false))
+        .map((e) => e.key)
+        .toList();
+
+    if (staleIds.isEmpty) return;
+
+    for (final id in staleIds) {
+      peers.remove(id);
+    }
+    notifyListeners();
+  }
+
   void clear() {
     userId = null;
     userName = null;
