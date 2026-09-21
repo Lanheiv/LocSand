@@ -1,1 +1,0 @@
-// Pagaidām testi nav implomintēti (vēlāk izstrādes procesā būs)
