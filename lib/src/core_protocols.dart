@@ -57,4 +57,10 @@ Future<void> coreProtocols() async {
   }
 
   SessionData().startPeerPruning();
+  
+  try {
+    await SessionData().loadSavedPeers();
+  } catch (e) {
+    log("Loading saved peers failed: $e");
+  }
 }

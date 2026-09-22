@@ -72,6 +72,19 @@ class TcpPeerServer {
             return;
           }
           conn.deviceId = incomingId;
+          
+          if (SessionData().hasPendingOutboundTo(incomingId)) {
+            if (SessionData().shouldYieldTo(incomingId)) {
+              log("Connection glare with $incomingId — yielding to their request");
+              SessionData().abandonPendingOutbound(incomingId);
+              // Fall through to the normal accept flow below.
+            } else {
+              log("Connection glare with $incomingId — keeping our own outbound dial");
+              conn.send({'type': 'reject', 'reason': 'glare'});
+              conn.disconnect();
+              return;
+            }
+          }
 
           final handler = SessionData().onIncomingRequest;
           if (handler == null) {
@@ -97,6 +110,17 @@ class TcpPeerServer {
 
         if (type == 'chat') {
           SessionData().receiveChatMessage(conn.deviceId!, msg['text'] as String? ?? '');
+          return;
+        }
+
+        if (type == 'save_request') {
+          final name = msg['name'] as String? ?? conn.deviceId!;
+          SessionData().handleIncomingSaveRequest(conn.deviceId!, name, conn);
+          return;
+        }
+
+        if (type == 'save_response') {
+          SessionData().handleSaveResponse(conn.deviceId!, msg['accepted'] as bool? ?? false);
           return;
         }
 

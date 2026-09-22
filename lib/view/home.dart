@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'package:locsand/src/data/session_data.dart';
@@ -10,6 +12,7 @@ import 'package:locsand/view/pages/setting_page.dart';
 import 'package:locsand/view/pages/home_page.dart';
 
 import 'package:locsand/view/components/show_dialog.dart';
+import 'package:locsand/view/components/save_request.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,7 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<Widget> get pages => [
         HomePage(onTapPeer: _openChat),
-        const ChatPage(),
+        ChatPage(onTapPeer: _openChat),
         const SettingPage(),
       ];
 
@@ -40,11 +43,25 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     SessionData().addListener(_onChanged);
     SessionData().onIncomingRequest = (deviceId, name, respond) {
+      // Already a saved/trusted peer — no need to ask again every time
+      // they reconnect. The TLS certificate pinning in PeerTrustStore
+      // still protects against someone else answering on that deviceId.
+      if (SessionData().isPeerSaved(deviceId)) {
+        respond(true);
+        return;
+      }
       if (!mounted) {
         respond(false);
         return;
       }
       ConnectionRequestDialog.show(context, name: name, respond: respond);
+    };
+    SessionData().onSaveRequest = (deviceId, name, respond) {
+      if (!mounted) {
+        respond(false);
+        return;
+      }
+      SaveRequestDialog.show(context, name: name, respond: respond);
     };
   }
 
@@ -67,8 +84,11 @@ class _HomeScreenState extends State<HomeScreen> {
         await SessionData().connectToPeer(peer.deviceId);
       } catch (e) {
         if (mounted) {
+          final message = e is SocketException
+              ? "Couldn't reach ${peer.name} — they may be offline or just starting up. Try again in a moment."
+              : "Connect failed: $e";
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Connect failed: $e")),
+            SnackBar(content: Text(message)),
           );
         }
       } finally {

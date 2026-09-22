@@ -26,6 +26,7 @@ class PeerList extends StatelessWidget {
         final p = peers[index];
         final conn = session.getTcpConnection(p.deviceId);
         final connected = conn != null && conn.isConnected;
+        final saved = session.isPeerSaved(p.deviceId);
 
         return ListTile(
           title: Text(p.name),
@@ -34,7 +35,17 @@ class PeerList extends StatelessWidget {
             connected ? Icons.link : Icons.link_off,
             color: connected ? Colors.green : Colors.grey,
           ),
-          trailing: const Icon(Icons.chat_bubble_outline),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (saved)
+                const Padding(
+                  padding: EdgeInsets.only(right: 6),
+                  child: Icon(Icons.bookmark, size: 18, color: Colors.amber),
+                ),
+              const Icon(Icons.chat_bubble_outline),
+            ],
+          ),
           onTap: () => onTapPeer(p),
         );
       },

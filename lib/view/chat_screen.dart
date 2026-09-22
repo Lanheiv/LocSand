@@ -12,6 +12,7 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final _controller = TextEditingController();
+  bool _savingConnection = false;
 
   @override
   void initState() {
@@ -43,15 +44,60 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _saveConnection() async {
+    setState(() => _savingConnection = true);
+    try {
+      final accepted = await SessionData().requestSaveConnection(widget.peer.deviceId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            accepted
+                ? 'Connection saved — this device will try to auto-reconnect next time.'
+                : '${widget.peer.name} declined the save request.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Couldn't save connection: $e")),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingConnection = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final messages = SessionData().getChatMessages(widget.peer.deviceId);
     final conn = SessionData().getTcpConnection(widget.peer.deviceId);
     final connected = conn != null && conn.isConnected;
+    final saved = SessionData().isPeerSaved(widget.peer.deviceId);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.peer.name),
+        actions: [
+          if (_savingConnection)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              ),
+            )
+          else
+            IconButton(
+              icon: Icon(saved ? Icons.bookmark : Icons.bookmark_outline),
+              tooltip: saved
+                  ? 'Saved — will auto-reconnect'
+                  : (connected ? 'Save this connection' : 'Connect first to save'),
+              onPressed: (!saved && connected) ? _saveConnection : null,
+            ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(20),
           child: Padding(
