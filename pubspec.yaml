@@ -39,6 +39,7 @@ dependencies:
   toml: ^0.17.0
   basic_utils: ^5.8.2
   path_provider: ^2.1.6
+  file_picker: ^10.3.10
 
 dev_dependencies:
   flutter_test:

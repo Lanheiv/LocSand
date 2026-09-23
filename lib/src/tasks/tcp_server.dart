@@ -72,18 +72,17 @@ class TcpPeerServer {
             return;
           }
           conn.deviceId = incomingId;
-          
-          if (SessionData().hasPendingOutboundTo(incomingId)) {
-            if (SessionData().shouldYieldTo(incomingId)) {
-              log("Connection glare with $incomingId — yielding to their request");
-              SessionData().abandonPendingOutbound(incomingId);
-              // Fall through to the normal accept flow below.
-            } else {
-              log("Connection glare with $incomingId — keeping our own outbound dial");
-              conn.send({'type': 'reject', 'reason': 'glare'});
-              conn.disconnect();
-              return;
-            }
+
+          // Saved peers skip the manual accept/decline dialog entirely —
+          // both sides already agreed to trust each other when they saved
+          // one another, so re-prompting on every reconnect would defeat
+          // the point of saving in the first place.
+          if (SessionData().isPeerSaved(incomingId)) {
+            accepted = true;
+            conn.send({'type': 'accept', 'deviceId': SessionData().userId, 'name': SessionData().userName});
+            SessionData().registerIncomingConnection(incomingId, conn);
+            log("Auto-accepted connection from saved peer $incomingName ($incomingId)");
+            return;
           }
 
           final handler = SessionData().onIncomingRequest;
@@ -108,23 +107,11 @@ class TcpPeerServer {
           return;
         }
 
-        if (type == 'chat') {
-          SessionData().receiveChatMessage(conn.deviceId!, msg['text'] as String? ?? '');
-          return;
-        }
-
-        if (type == 'save_request') {
-          final name = msg['name'] as String? ?? conn.deviceId!;
-          SessionData().handleIncomingSaveRequest(conn.deviceId!, name, conn);
-          return;
-        }
-
-        if (type == 'save_response') {
-          SessionData().handleSaveResponse(conn.deviceId!, msg['accepted'] as bool? ?? false);
-          return;
-        }
-
-        log("Message from ${conn.deviceId}: $msg");
+        // Everything post-handshake (chat, save, file transfer messages,
+        // and anything added later) goes through the same dispatcher the
+        // outbound connection side uses, so the protocol only needs to be
+        // implemented once.
+        SessionData().handlePeerMessage(conn.deviceId!, msg);
       },
       onDisconnected: () {
         if (conn.deviceId != null) {

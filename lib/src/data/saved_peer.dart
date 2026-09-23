@@ -13,20 +13,6 @@ class SavedPeer {
     required this.savedAt,
   });
 
-  SavedPeer copyWith({
-    String? name,
-    String? lastKnownIp,
-    int? lastKnownPort,
-  }) {
-    return SavedPeer(
-      deviceId: deviceId,
-      name: name ?? this.name,
-      lastKnownIp: lastKnownIp ?? this.lastKnownIp,
-      lastKnownPort: lastKnownPort ?? this.lastKnownPort,
-      savedAt: savedAt,
-    );
-  }
-
   Map<String, dynamic> toJson() => {
         'deviceId': deviceId,
         'name': name,
@@ -38,8 +24,9 @@ class SavedPeer {
   factory SavedPeer.fromJson(Map<String, dynamic> json) => SavedPeer(
         deviceId: json['deviceId'] as String,
         name: json['name'] as String,
-        lastKnownIp: json['lastKnownIp'] as String,
-        lastKnownPort: json['lastKnownPort'] as int,
+        // Tolerate records saved before these fields existed.
+        lastKnownIp: json['lastKnownIp'] as String? ?? '',
+        lastKnownPort: json['lastKnownPort'] as int? ?? 0,
         savedAt: DateTime.parse(json['savedAt'] as String),
       );
 }
