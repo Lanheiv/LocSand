@@ -18,11 +18,19 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final _controller = TextEditingController();
+  bool _historyEnabled = false;
 
   @override
   void initState() {
     super.initState();
     SessionData().addListener(_onChanged);
+    SessionData().ensureChatHistoryLoaded(widget.peer.deviceId);
+    _loadHistoryEnabledFlag();
+  }
+
+  Future<void> _loadHistoryEnabledFlag() async {
+    final enabled = await SessionData().isChatHistorySavingEnabled(widget.peer.deviceId);
+    if (mounted) setState(() => _historyEnabled = enabled);
   }
 
   @override
@@ -55,6 +63,47 @@ class _ChatScreenState extends State<ChatScreen> {
       await SessionData().forgetSavedPeer(widget.peer.deviceId);
     } else {
       await SessionData().savePeer(widget.peer.deviceId);
+    }
+  }
+
+  Future<void> _toggleHistorySaving(bool enabled) async {
+    await SessionData().setChatHistorySaving(widget.peer.deviceId, enabled);
+    if (!mounted) return;
+    setState(() => _historyEnabled = enabled);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(enabled ? "Saving chat history" : "Stopped saving new messages"),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteHistory() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete & stop saving?'),
+        content: const Text(
+          "This deletes this conversation from this screen and from "
+          "storage, and turns history saving off for this peer. This "
+          "can't be undone.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await SessionData().deleteChatHistory(widget.peer.deviceId);
+      if (mounted) setState(() => _historyEnabled = false);
     }
   }
 
@@ -211,6 +260,16 @@ class _ChatScreenState extends State<ChatScreen> {
             icon: Icon(saved ? Icons.star : Icons.star_border),
             tooltip: saved ? 'Saved' : 'Save',
             onPressed: _toggleSave,
+          ),
+          IconButton(
+            icon: Icon(_historyEnabled ? Icons.history : Icons.history_toggle_off),
+            tooltip: _historyEnabled ? 'Saving history — tap to stop' : 'Save history',
+            onPressed: () => _toggleHistorySaving(!_historyEnabled),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Delete & stop saving',
+            onPressed: (_historyEnabled || messages.isNotEmpty) ? _confirmDeleteHistory : null,
           ),
         ],
         bottom: PreferredSize(

@@ -9,6 +9,7 @@ import 'package:locsand/src/data/chat_message.dart';
 import 'package:locsand/src/data/saved_peer.dart';
 import 'package:locsand/src/data/file_transfer.dart';
 import 'package:locsand/src/helpers/peer_store.dart';
+import 'package:locsand/src/helpers/chat_history_store.dart';
 import 'package:locsand/src/tasks/tcp_connection.dart';
 
 class SessionData extends ChangeNotifier {
@@ -313,6 +314,7 @@ class SessionData extends ChangeNotifier {
           ChatMessage(text: text, fromMe: false, time: DateTime.now()),
         );
     notifyListeners();
+    unawaited(ChatHistoryStore().saveIfEnabled(deviceId, getChatMessages(deviceId)));
   }
 
   void sendChatMessage(String deviceId, String text) {
@@ -325,6 +327,51 @@ class SessionData extends ChangeNotifier {
           ChatMessage(text: text, fromMe: true, time: DateTime.now()),
         );
     notifyListeners();
+    unawaited(ChatHistoryStore().saveIfEnabled(deviceId, getChatMessages(deviceId)));
+  }
+
+  // ---- Saved chat history ---------------------------------------------
+  //
+  // `chatMessages`, above, is in-memory only, so on its own it disappears
+  // on sign-out or app restart. Saving to disk is opt-in per peer: the
+  // user turns it on explicitly (see [setChatHistorySaving]), and only
+  // then does every later sent/received message also get written to disk
+  // via ChatHistoryStore. Turning it off stops future messages from being
+  // saved but leaves whatever's already on disk in place; deleting (see
+  // [deleteChatHistory]) removes the save and turns saving off together,
+  // in one step, since there's then nothing left to have an opinion on.
+
+  /// Whether history saving is currently turned on for [deviceId].
+  Future<bool> isChatHistorySavingEnabled(String deviceId) =>
+      ChatHistoryStore().isEnabled(deviceId);
+
+  /// Turns history saving on or off for [deviceId]. Turning it on saves
+  /// the conversation as it stands right now, so nothing already said is
+  /// lost once saving starts.
+  Future<void> setChatHistorySaving(String deviceId, bool enabled) async {
+    await ChatHistoryStore().setEnabled(deviceId, enabled, getChatMessages(deviceId));
+  }
+
+  /// Loads the on-disk history for [deviceId] into memory if nothing is
+  /// there yet (e.g. right after opening a chat screen following an app
+  /// restart). Does nothing if messages for this peer are already loaded,
+  /// so it never clobbers the live conversation with a stale save.
+  Future<void> ensureChatHistoryLoaded(String deviceId) async {
+    if (chatMessages.containsKey(deviceId)) return;
+    final messages = await ChatHistoryStore().load(deviceId);
+    if (messages.isEmpty) return;
+    chatMessages[deviceId] = messages;
+    notifyListeners();
+  }
+
+  /// Deletes the conversation with [deviceId] everywhere: the in-memory
+  /// list (so it disappears from the chat screen immediately) and the
+  /// on-disk save (so it doesn't come back the next time the app starts,
+  /// and history saving goes back to being off for this peer).
+  Future<void> deleteChatHistory(String deviceId) async {
+    chatMessages.remove(deviceId);
+    notifyListeners();
+    await ChatHistoryStore().deleteFile(deviceId);
   }
 
   // ---- File transfer -------------------------------------------------
