@@ -1,17 +1,21 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+
 import 'package:locsand/src/core_protocols.dart';
 import 'package:locsand/view/home.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  runApp(const MyApp());
+  unawaited(_startCore());
+}
 
+Future<void> _startCore() async {
   try {
     await coreProtocols();
   } catch (e) {
-    debugPrint("coreProtocols failed to start: $e");
+    debugPrint("coreProtocols failed: $e");
   }
-
-  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {

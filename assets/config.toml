@@ -1,6 +1,5 @@
 [node]
 name = "test-pc"
-id = "device-1"
 
 [network]
 udp_port = 5000

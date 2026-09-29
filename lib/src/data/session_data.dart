@@ -42,8 +42,8 @@ class SessionData extends ChangeNotifier {
   /// because its discovery broadcasts stopped — an active chat shouldn't
   /// be yanked out from under the user due to a missed UDP packet.
   void startPeerPruning({
-    Duration interval = const Duration(seconds: 15),
-    Duration staleAfter = const Duration(seconds: 90),
+    Duration interval = const Duration(seconds: 10),
+    Duration staleAfter = const Duration(seconds: 45),
   }) {
     _pruneTimer?.cancel();
     _pruneTimer = Timer.periodic(interval, (_) => _prunePeers(staleAfter));
@@ -168,7 +168,6 @@ class SessionData extends ChangeNotifier {
 
   void addOrUpdatePeer(PeerData peer) {
     peers[peer.deviceId] = peer;
-    userOnlineTime = DateTime.now();
     notifyListeners();
 
     // A saved peer doesn't need the user to tap it manually — if we just
@@ -196,28 +195,73 @@ class SessionData extends ChangeNotifier {
 
   TcpPeerConnection? getTcpConnection(String deviceId) => _tcpConnections[deviceId];
 
+  // deviceId -> connection attempt currently in flight. Discovery fires an
+  // auto-connect on every broadcast, and the user may tap the same peer
+  // meanwhile; they must share one attempt instead of each dialing (and each
+  // triggering an accept dialog on the other side).
+  final Map<String, Future<TcpPeerConnection>> _pendingConnects = {};
+
   Future<TcpPeerConnection> connectToPeer(
     String deviceId, {
     Function(Map<String, dynamic>)? onMessage,
     Function(Object)? onError,
     Function()? onDisconnected,
-  }) async {
-    var existing = _tcpConnections[deviceId];
+  }) {
+    final existing = _tcpConnections[deviceId];
     if (existing != null && existing.isConnected) {
-      return existing;
+      return Future.value(existing);
     }
 
+    // Callbacks passed by a second caller are ignored (nobody passes any
+    // today).
+    final pending = _pendingConnects[deviceId];
+    if (pending != null) return pending;
+
+    final attempt = _connectToPeer(
+      deviceId,
+      onMessage: onMessage,
+      onError: onError,
+      onDisconnected: onDisconnected,
+    ).whenComplete(() {
+      // Block body on purpose: returning the removed future from an arrow
+      // function would make whenComplete wait on itself.
+      _pendingConnects.remove(deviceId);
+    });
+    _pendingConnects[deviceId] = attempt;
+    return attempt;
+  }
+
+  Future<TcpPeerConnection> _connectToPeer(
+    String deviceId, {
+    Function(Map<String, dynamic>)? onMessage,
+    Function(Object)? onError,
+    Function()? onDisconnected,
+  }) async {
+    // Prefer the freshly discovered address; fall back to the address saved
+    // for a saved peer, so it can still be reached when a discovery packet
+    // was missed.
+    String ip;
+    int port;
     final peer = getPeer(deviceId);
-    if (peer == null) {
-      throw StateError("Peer $deviceId not found");
+    if (peer != null) {
+      ip = peer.ip;
+      port = peer.port;
+    } else {
+      final saved = SavedPeersStore().get(deviceId);
+      if (saved == null || saved.lastKnownIp.isEmpty || saved.lastKnownPort == 0) {
+        throw StateError("Peer $deviceId not found");
+      }
+      ip = saved.lastKnownIp;
+      port = saved.lastKnownPort;
     }
 
     final response = Completer<bool>();
 
-    final conn = TcpPeerConnection(
+    late final TcpPeerConnection conn;
+    conn = TcpPeerConnection(
       deviceId: deviceId,
-      ip: peer.ip,
-      port: peer.port,
+      ip: ip,
+      port: port,
       onMessage: (msg) {
         final type = msg['type'];
         if (!response.isCompleted && (type == 'accept' || type == 'reject')) {
@@ -230,8 +274,12 @@ class SessionData extends ChangeNotifier {
       onError: onError,
       onDisconnected: () {
         if (!response.isCompleted) response.complete(false);
-        _tcpConnections.remove(deviceId);
-        _failInProgressTransfers(deviceId);
+        // Only tear down shared state if THIS connection is the registered
+        // one. A stale connection closing must not remove its replacement.
+        if (identical(_tcpConnections[deviceId], conn)) {
+          _tcpConnections.remove(deviceId);
+          _failInProgressTransfers(deviceId);
+        }
         onDisconnected?.call();
         notifyListeners();
       },
@@ -251,9 +299,20 @@ class SessionData extends ChangeNotifier {
       throw StateError("Connection request was declined or timed out");
     }
 
-    _tcpConnections[deviceId] = conn;
+    _setConnection(deviceId, conn);
     notifyListeners();
     return conn;
+  }
+
+  /// Registers [conn] as the connection for [deviceId], closing any
+  /// different connection that was registered before (e.g. when both sides
+  /// dialed each other at the same moment).
+  void _setConnection(String deviceId, TcpPeerConnection conn) {
+    final existing = _tcpConnections[deviceId];
+    if (existing != null && !identical(existing, conn)) {
+      existing.disconnect();
+    }
+    _tcpConnections[deviceId] = conn;
   }
 
   /// Dispatches a message that arrived over an already-established
@@ -282,7 +341,7 @@ class SessionData extends ChangeNotifier {
         _handleFileChunk(deviceId, msg);
         break;
       case 'file_complete':
-        _handleFileComplete(deviceId, msg);
+        unawaited(_handleFileComplete(deviceId, msg));
         break;
       default:
         break;
@@ -290,18 +349,26 @@ class SessionData extends ChangeNotifier {
   }
 
   void registerIncomingConnection(String deviceId, TcpPeerConnection conn) {
-    final existing = _tcpConnections[deviceId];
-    if (existing != null && existing != conn) {
-      existing.disconnect();
-    }
-    _tcpConnections[deviceId] = conn;
+    _setConnection(deviceId, conn);
     notifyListeners();
   }
 
-  void disconnectFromPeer(String deviceId, {bool closeSocket = true}) {
-    final conn = _tcpConnections.remove(deviceId);
+  /// Removes the registered connection for [deviceId].
+  ///
+  /// If [ifCurrent] is given, nothing happens unless it is still the
+  /// registered connection: a socket that was already replaced by a newer
+  /// one must not remove its replacement when it finally closes.
+  void disconnectFromPeer(
+    String deviceId, {
+    bool closeSocket = true,
+    TcpPeerConnection? ifCurrent,
+  }) {
+    final current = _tcpConnections[deviceId];
+    if (ifCurrent != null && !identical(current, ifCurrent)) return;
+
+    _tcpConnections.remove(deviceId);
     if (closeSocket) {
-      conn?.disconnect();
+      current?.disconnect();
     }
     _failInProgressTransfers(deviceId);
     notifyListeners();
@@ -310,11 +377,10 @@ class SessionData extends ChangeNotifier {
   List<ChatMessage> getChatMessages(String deviceId) => chatMessages[deviceId] ?? [];
 
   void receiveChatMessage(String deviceId, String text) {
-    chatMessages.putIfAbsent(deviceId, () => []).add(
-          ChatMessage(text: text, fromMe: false, time: DateTime.now()),
-        );
-    notifyListeners();
-    unawaited(ChatHistoryStore().saveIfEnabled(deviceId, getChatMessages(deviceId)));
+    unawaited(_addMessage(
+      deviceId,
+      ChatMessage(text: text, fromMe: false, time: DateTime.now()),
+    ));
   }
 
   void sendChatMessage(String deviceId, String text) {
@@ -323,11 +389,26 @@ class SessionData extends ChangeNotifier {
       throw StateError("Not connected to $deviceId");
     }
     conn.send({'type': 'chat', 'text': text});
-    chatMessages.putIfAbsent(deviceId, () => []).add(
-          ChatMessage(text: text, fromMe: true, time: DateTime.now()),
-        );
+    unawaited(_addMessage(
+      deviceId,
+      ChatMessage(text: text, fromMe: true, time: DateTime.now()),
+    ));
+  }
+
+  /// Adds a message to the in-memory list and persists it if saving is on.
+  ///
+  /// The saved history is loaded first: appending to a fresh empty list and
+  /// then saving would overwrite the whole history file with just this one
+  /// message.
+  Future<void> _addMessage(String deviceId, ChatMessage message) async {
+    await ensureChatHistoryLoaded(deviceId);
+    chatMessages.putIfAbsent(deviceId, () => []).add(message);
     notifyListeners();
-    unawaited(ChatHistoryStore().saveIfEnabled(deviceId, getChatMessages(deviceId)));
+    try {
+      await ChatHistoryStore().saveIfEnabled(deviceId, getChatMessages(deviceId));
+    } catch (e) {
+      debugPrint("Saving chat history failed: $e");
+    }
   }
 
   // ---- Saved chat history ---------------------------------------------
@@ -349,6 +430,7 @@ class SessionData extends ChangeNotifier {
   /// the conversation as it stands right now, so nothing already said is
   /// lost once saving starts.
   Future<void> setChatHistorySaving(String deviceId, bool enabled) async {
+    await ensureChatHistoryLoaded(deviceId);
     await ChatHistoryStore().setEnabled(deviceId, enabled, getChatMessages(deviceId));
   }
 
@@ -356,12 +438,24 @@ class SessionData extends ChangeNotifier {
   /// there yet (e.g. right after opening a chat screen following an app
   /// restart). Does nothing if messages for this peer are already loaded,
   /// so it never clobbers the live conversation with a stale save.
-  Future<void> ensureChatHistoryLoaded(String deviceId) async {
-    if (chatMessages.containsKey(deviceId)) return;
+  Future<void> ensureChatHistoryLoaded(String deviceId) {
+    if (chatMessages.containsKey(deviceId)) return Future.value();
+    // Share one load between concurrent callers (two messages arriving back
+    // to back), otherwise the second load would replace the list that the
+    // first message was already appended to.
+    return _historyLoads[deviceId] ??= _loadHistory(deviceId).whenComplete(() {
+      _historyLoads.remove(deviceId);
+    });
+  }
+
+  final Map<String, Future<void>> _historyLoads = {};
+
+  Future<void> _loadHistory(String deviceId) async {
     final messages = await ChatHistoryStore().load(deviceId);
-    if (messages.isEmpty) return;
+    // Re-check after the await: something may have filled the list meanwhile.
+    if (chatMessages.containsKey(deviceId)) return;
     chatMessages[deviceId] = messages;
-    notifyListeners();
+    if (messages.isNotEmpty) notifyListeners();
   }
 
   /// Deletes the conversation with [deviceId] everywhere: the in-memory
@@ -446,10 +540,13 @@ class SessionData extends ChangeNotifier {
   }
 
   void _handleFileOffer(String deviceId, Map<String, dynamic> msg) {
-    final transferId = msg['transferId'] as String?;
-    final name = msg['name'] as String?;
-    final size = msg['size'] as int?;
-    if (transferId == null || name == null || size == null || size < 0) return;
+    final transferId = msg['transferId'];
+    final name = msg['name'];
+    final size = msg['size'];
+    if (transferId is! String || transferId.isEmpty || transferId.length > 128) return;
+    if (name is! String || size is! int || size < 0) return;
+    // Never let an offer replace an existing transfer entry.
+    if (fileTransfers.containsKey(transferId)) return;
 
     final transfer = FileTransfer(
       transferId: transferId,
@@ -498,23 +595,31 @@ class SessionData extends ChangeNotifier {
 
       conn.send({'type': 'file_accept', 'transferId': transfer.transferId});
     } catch (e) {
-      transfer.status = FileTransferStatus.failed;
-      notifyListeners();
+      _abortIncoming(transfer);
     }
   }
 
   void _declineIncomingFile(FileTransfer transfer) {
     transfer.status = FileTransferStatus.declined;
     notifyListeners();
-    _tcpConnections[transfer.deviceId]?.send({
-      'type': 'file_decline',
-      'transferId': transfer.transferId,
-    });
+    try {
+      _tcpConnections[transfer.deviceId]?.send({
+        'type': 'file_decline',
+        'transferId': transfer.transferId,
+      });
+    } catch (_) {
+      // Peer already gone; nothing to tell.
+    }
   }
 
   void _handleFileAccept(String deviceId, Map<String, dynamic> msg) {
-    final transfer = fileTransfers[msg['transferId'] as String?];
-    if (transfer == null || transfer.direction != FileTransferDirection.outgoing) return;
+    final transfer = fileTransfers[msg['transferId']];
+    if (transfer == null ||
+        transfer.deviceId != deviceId || // only the peer we offered it to
+        transfer.direction != FileTransferDirection.outgoing ||
+        transfer.status != FileTransferStatus.offered) {
+      return;
+    }
 
     transfer.status = FileTransferStatus.inProgress;
     notifyListeners();
@@ -522,8 +627,12 @@ class SessionData extends ChangeNotifier {
   }
 
   void _handleFileDecline(String deviceId, Map<String, dynamic> msg) {
-    final transfer = fileTransfers[msg['transferId'] as String?];
-    if (transfer == null) return;
+    final transfer = fileTransfers[msg['transferId']];
+    if (transfer == null ||
+        transfer.deviceId != deviceId ||
+        transfer.direction != FileTransferDirection.outgoing) {
+      return;
+    }
     transfer.status = FileTransferStatus.declined;
     notifyListeners();
   }
@@ -544,18 +653,22 @@ class SessionData extends ChangeNotifier {
           'data': base64Encode(chunk),
         });
 
+        // Wait until the socket has actually taken the data. Yielding to the
+        // event loop (Future.delayed(Duration.zero)) doesn't do that: the
+        // whole file would still queue up in memory on a slow link.
+        await conn.flush();
+
         transfer.bytesTransferred += chunk.length;
         notifyListeners();
-
-        // Yield to the event loop between chunks instead of writing the
-        // whole file synchronously back-to-back, so a slow connection
-        // doesn't pile everything into the socket's internal buffer at
-        // once.
-        await Future.delayed(Duration.zero);
       }
 
       final conn = _tcpConnections[transfer.deviceId];
-      conn?.send({'type': 'file_complete', 'transferId': transfer.transferId});
+      if (conn == null || !conn.isConnected) {
+        throw StateError("Connection lost during transfer");
+      }
+      conn.send({'type': 'file_complete', 'transferId': transfer.transferId});
+      await conn.flush();
+
       transfer.status = FileTransferStatus.completed;
       notifyListeners();
     } catch (e) {
@@ -565,45 +678,89 @@ class SessionData extends ChangeNotifier {
   }
 
   void _handleFileChunk(String deviceId, Map<String, dynamic> msg) {
-    final transferId = msg['transferId'] as String?;
-    final data = msg['data'] as String?;
+    final transferId = msg['transferId'];
+    final data = msg['data'];
+    if (transferId is! String || data is! String) return;
+
     final transfer = fileTransfers[transferId];
     final sink = _incomingSinks[transferId];
-    if (transfer == null || sink == null || data == null) return;
+    if (transfer == null || sink == null) return;
+    if (transfer.deviceId != deviceId ||
+        transfer.direction != FileTransferDirection.incoming ||
+        transfer.status != FileTransferStatus.inProgress) {
+      return;
+    }
 
     try {
       final bytes = base64Decode(data);
+      // Never accept more than the size the user agreed to.
+      if (transfer.bytesTransferred + bytes.length > transfer.size) {
+        _abortIncoming(transfer);
+        return;
+      }
       sink.add(bytes);
       transfer.bytesTransferred += bytes.length;
       notifyListeners();
     } catch (e) {
-      transfer.status = FileTransferStatus.failed;
-      unawaited(sink.close());
-      _incomingSinks.remove(transferId);
-      notifyListeners();
+      _abortIncoming(transfer);
     }
   }
 
   Future<void> _handleFileComplete(String deviceId, Map<String, dynamic> msg) async {
-    final transferId = msg['transferId'] as String?;
-    final transfer = fileTransfers[transferId];
-    final sink = _incomingSinks.remove(transferId);
-    if (transfer == null) return;
+    final transferId = msg['transferId'];
+    if (transferId is! String) return;
 
+    final transfer = fileTransfers[transferId];
+    if (transfer == null ||
+        transfer.deviceId != deviceId ||
+        transfer.direction != FileTransferDirection.incoming ||
+        transfer.status != FileTransferStatus.inProgress) {
+      return;
+    }
+
+    // "Complete" with the wrong number of bytes means a truncated file.
+    if (transfer.bytesTransferred != transfer.size) {
+      _abortIncoming(transfer);
+      return;
+    }
+
+    final sink = _incomingSinks.remove(transferId);
     await sink?.close();
     transfer.status = FileTransferStatus.completed;
     notifyListeners();
   }
 
+  /// Marks an incoming transfer as failed, closes its sink and deletes the
+  /// partially written file so it isn't left behind looking like a real one.
+  void _abortIncoming(FileTransfer transfer) {
+    final sink = _incomingSinks.remove(transfer.transferId);
+    final path = transfer.localPath;
+    transfer.status = FileTransferStatus.failed;
+    notifyListeners();
+
+    unawaited(() async {
+      try {
+        await sink?.close();
+      } catch (_) {}
+      if (path != null) {
+        try {
+          await File(path).delete();
+        } catch (_) {}
+      }
+    }());
+  }
+
   void _failInProgressTransfers(String deviceId) {
     var changed = false;
-    for (final transfer in fileTransfers.values) {
+    for (final transfer in fileTransfers.values.toList()) {
       if (transfer.deviceId == deviceId &&
           (transfer.status == FileTransferStatus.inProgress ||
               transfer.status == FileTransferStatus.offered)) {
-        transfer.status = FileTransferStatus.failed;
-        final sink = _incomingSinks.remove(transfer.transferId);
-        sink?.close();
+        if (transfer.direction == FileTransferDirection.incoming) {
+          _abortIncoming(transfer);
+        } else {
+          transfer.status = FileTransferStatus.failed;
+        }
         changed = true;
       }
     }

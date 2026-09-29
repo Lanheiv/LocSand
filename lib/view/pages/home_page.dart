@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:locsand/src/core_protocols.dart';
 import 'package:locsand/src/data/session_data.dart';
 import 'package:locsand/src/data/peer_data.dart';
 
@@ -39,6 +40,10 @@ class _HomePageState extends State<HomePage> {
       peers: session.allPeers,
       session: session,
       onTapPeer: widget.onTapPeer,
+      onRefresh: () async {
+        await search?.refresh();
+        await Future.delayed(const Duration(seconds: 2));
+      },
     );
   }
 }

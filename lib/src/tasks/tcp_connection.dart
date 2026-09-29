@@ -7,6 +7,9 @@ import 'package:locsand/src/helpers/tls_context.dart';
 import 'package:locsand/src/helpers/peer_trust.dart';
 
 class TcpPeerConnection {
+  static const Duration _pingEvery = Duration(seconds: 15);
+  static const Duration _deadAfter = Duration(seconds: 45);
+
   String? deviceId;
 
   final String ip;
@@ -14,6 +17,8 @@ class TcpPeerConnection {
 
   SecureSocket? _socket;
   StreamSubscription<String>? _subscription;
+  Timer? _keepAlive;
+  DateTime _lastRx = DateTime.now();
   bool _connected = false;
 
   final Function(Map<String, dynamic> message)? onMessage;
@@ -85,14 +90,23 @@ class TcpPeerConnection {
   }
 
   void _listen() {
+    try {
+      _socket!.setOption(SocketOption.tcpNoDelay, true);
+    } catch (_) {}
+
+    _lastRx = DateTime.now();
+    _startKeepAlive();
+
     _subscription = _socket!
         .cast<List<int>>()
-        .map((bytes) => utf8.decode(bytes))
+        .transform(utf8.decoder)
         .transform(const LineSplitter())
         .listen(
           (line) {
+            _lastRx = DateTime.now();
             try {
               final json = jsonDecode(line) as Map<String, dynamic>;
+              if (json['type'] == 'ping') return;
               onMessage?.call(json);
             } catch (e) {
               log("Bad message from ${deviceId ?? ip}: $e");
@@ -101,16 +115,42 @@ class TcpPeerConnection {
           onError: (Object e) {
             log("TCP error ${deviceId ?? ip}: $e");
             _connected = false;
+            _stopKeepAlive();
             onError?.call(e);
             onDisconnected?.call();
           },
           onDone: () {
             log("TCP done ${deviceId ?? ip}");
             _connected = false;
+            _stopKeepAlive();
             onDisconnected?.call();
           },
           cancelOnError: true,
         );
+  }
+
+  void _startKeepAlive() {
+    _keepAlive?.cancel();
+    _keepAlive = Timer.periodic(_pingEvery, (_) {
+      if (!_connected) return;
+
+      if (DateTime.now().difference(_lastRx) > _deadAfter) {
+        log("No traffic from ${deviceId ?? ip} for ${_deadAfter.inSeconds}s — closing");
+        final callback = onDisconnected;
+        unawaited(disconnect());
+        callback?.call();
+        return;
+      }
+
+      try {
+        _socket?.write('{"type":"ping"}\n');
+      } catch (_) {}
+    });
+  }
+
+  void _stopKeepAlive() {
+    _keepAlive?.cancel();
+    _keepAlive = null;
   }
 
   void send(Map<String, dynamic> message) {
@@ -120,7 +160,12 @@ class TcpPeerConnection {
     _socket!.write("${jsonEncode(message)}\n");
   }
 
+  Future<void> flush() async {
+    await _socket?.flush();
+  }
+
   Future<void> disconnect() async {
+    _stopKeepAlive();
     await _subscription?.cancel();
     _socket?.destroy();
     _socket = null;

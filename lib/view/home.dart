@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:locsand/src/core_protocols.dart';
 import 'package:locsand/src/data/session_data.dart';
 import 'package:locsand/src/data/peer_data.dart';
 
@@ -18,7 +19,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _connecting = false;
 
   int currentPage = 0;
@@ -29,8 +30,6 @@ class _HomeScreenState extends State<HomeScreen> {
         const SettingPage(),
       ];
 
-  // Titles shown in the AppBar, kept in sync with `pages` and the
-  // bottom navigation items below.
   final List<String> pageTitles = const [
     'Home',
     'Chats',
@@ -40,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     SessionData().addListener(_onChanged);
     SessionData().onIncomingRequest = (deviceId, name, respond) {
       if (!mounted) {
@@ -59,8 +59,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     SessionData().removeListener(_onChanged);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      search?.refresh();
+    }
   }
 
   void _onChanged() {
@@ -84,6 +92,9 @@ class _HomeScreenState extends State<HomeScreen> {
         if (mounted) setState(() => _connecting = false);
       }
     }
+
+    final nowConnected = SessionData().getTcpConnection(peer.deviceId)?.isConnected ?? false;
+    if (!nowConnected && !SessionData().isPeerSaved(peer.deviceId)) return;
 
     if (mounted) {
       Navigator.push(
@@ -119,7 +130,7 @@ class _HomeScreenState extends State<HomeScreen> {
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
           BottomNavigationBarItem(icon: Icon(Icons.chat), label: "Chats"),
-          BottomNavigationBarItem(icon: Icon(Icons.more_horiz), label: "More"),
+          BottomNavigationBarItem(icon: Icon(Icons.more_horiz), label: "Settings"),
         ],
       ),
     );
