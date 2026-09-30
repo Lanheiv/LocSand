@@ -9,11 +9,8 @@ import 'package:locsand/src/data/session_data.dart';
 class TcpPeerServer {
   final int port;
   SecureServerSocket? _server;
-  StreamSubscription<SecureSocket>? _subscription;
 
   TcpPeerServer({required this.port});
-
-  bool get isRunning => _server != null;
 
   Future<void> start() async {
     if (_server != null) return;
@@ -23,7 +20,7 @@ class TcpPeerServer {
     _server = await SecureServerSocket.bind(InternetAddress.anyIPv4, port, context);
     log("TCP server listening on port $port");
 
-    _subscription = _server!.listen(
+    _server!.listen(
       _handleIncoming,
       onError: (Object e) => log("TCP server error: $e"),
     );
@@ -124,11 +121,5 @@ class TcpPeerServer {
         }
       },
     );
-  }
-
-  Future<void> stop() async {
-    await _subscription?.cancel();
-    await _server?.close();
-    _server = null;
   }
 }

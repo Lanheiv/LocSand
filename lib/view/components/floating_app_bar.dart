@@ -1,71 +1,70 @@
 import 'package:flutter/material.dart';
 
+import 'package:locsand/view/components/card_style.dart';
+
 class FloatingAppBar extends StatelessWidget {
   const FloatingAppBar({
     super.key,
     required this.title,
     this.loading = false,
-    this.onSettings,
-    this.onUser,
+    this.showBack = false,
+    this.actions = const [],
   });
 
   final String title;
   final bool loading;
-  final VoidCallback? onSettings;
-  final VoidCallback? onUser;
+  final bool showBack;
+  final List<Widget> actions;
 
   static const double _height = 56;
-  static const double _maxWidth = 800;
   static const double _wideBreakpoint = 700;
+  static const double maxWidth = 800;
+
+  static bool _wide(BuildContext context) =>
+      MediaQuery.sizeOf(context).width >= _wideBreakpoint;
+
+  static double sidePadding(BuildContext context) => _wide(context) ? 24 : 12;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final dark = theme.brightness == Brightness.dark;
-    final width = MediaQuery.of(context).size.width;
-    final wide = width >= _wideBreakpoint;
-
-    // Inner left/right padding, clamped between 8 and 20.
+    final width = MediaQuery.sizeOf(context).width;
+    final wide = _wide(context);
     final innerPad = (width * 0.02).clamp(8.0, 20.0);
-
-    // Always a little different from the background, in light and dark.
-    final barColor = Color.alphaBlend(
-      scheme.onSurface.withOpacity(dark ? 0.09 : 0.05),
-      theme.scaffoldBackgroundColor,
-    );
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        wide ? 24 : 12,
+        sidePadding(context),
         wide ? 16 : 8,
-        wide ? 24 : 12,
+        sidePadding(context),
         wide ? 12 : 8,
       ),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: _maxWidth),
+          constraints: const BoxConstraints(maxWidth: maxWidth),
           child: Container(
             height: _height,
             padding: EdgeInsets.symmetric(horizontal: innerPad),
             decoration: BoxDecoration(
-              color: barColor,
+              color: cardColor(context),
               borderRadius: BorderRadius.circular(_height / 2),
             ),
             child: Row(
               children: [
-                IconButton(
-                  icon: const Icon(Icons.settings_rounded),
-                  onPressed: onSettings,
-                ),
-                const SizedBox(width: 4),
+                if (showBack)
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                    onPressed: () => Navigator.maybePop(context),
+                  )
+                else
+                  const SizedBox(width: 4),
                 Expanded(
                   child: Text(
                     title,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                   ),
                 ),
                 if (loading)
@@ -77,10 +76,7 @@ class FloatingAppBar extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                   ),
-                IconButton(
-                  icon: const Icon(Icons.person_rounded),
-                  onPressed: onUser,
-                ),
+                ...actions,
               ],
             ),
           ),

@@ -2,11 +2,14 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:locsand/src/data/peer_data.dart';
 import 'package:locsand/src/data/session_data.dart';
-import 'package:locsand/src/data/chat_message.dart';
-import 'package:locsand/src/data/file_transfer.dart';
+import 'package:locsand/view/components/chat_menu.dart';
+import 'package:locsand/view/components/chat_timeline.dart';
+import 'package:locsand/view/components/floating_app_bar.dart';
+import 'package:locsand/view/components/show_dialog.dart';
 
 class ChatScreen extends StatefulWidget {
   final PeerData peer;
@@ -17,25 +20,31 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  final _session = SessionData();
   final _controller = TextEditingController();
   bool _historyEnabled = false;
+  bool _hasText = false;
+  bool _connecting = false;
+
+  String get _id => widget.peer.deviceId;
 
   @override
   void initState() {
     super.initState();
-    SessionData().addListener(_onChanged);
-    SessionData().ensureChatHistoryLoaded(widget.peer.deviceId);
-    _loadHistoryEnabledFlag();
-  }
-
-  Future<void> _loadHistoryEnabledFlag() async {
-    final enabled = await SessionData().isChatHistorySavingEnabled(widget.peer.deviceId);
-    if (mounted) setState(() => _historyEnabled = enabled);
+    _session.addListener(_onChanged);
+    _session.ensureChatHistoryLoaded(_id);
+    _session.isChatHistorySavingEnabled(_id).then((enabled) {
+      if (mounted) setState(() => _historyEnabled = enabled);
+    });
+    _controller.addListener(() {
+      final has = _controller.text.trim().isNotEmpty;
+      if (has != _hasText) setState(() => _hasText = has);
+    });
   }
 
   @override
   void dispose() {
-    SessionData().removeListener(_onChanged);
+    _session.removeListener(_onChanged);
     _controller.dispose();
     super.dispose();
   }
@@ -48,288 +57,153 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
     try {
-      SessionData().sendChatMessage(widget.peer.deviceId, text);
+      _session.sendChatMessage(_id, text);
       _controller.clear();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Send failed: $e")),
-      );
+      toast(context, 'Send failed: ${errorText(e)}');
     }
   }
 
-  Future<void> _toggleSave() async {
-    final saved = SessionData().isPeerSaved(widget.peer.deviceId);
-    if (saved) {
-      await SessionData().forgetSavedPeer(widget.peer.deviceId);
-    } else {
-      await SessionData().savePeer(widget.peer.deviceId);
+  Future<void> _reconnect() async {
+    setState(() => _connecting = true);
+    try {
+      await _session.connectToPeer(_id);
+    } catch (e) {
+      if (mounted) toast(context, 'Connect failed: ${errorText(e)}');
     }
+    if (mounted) setState(() => _connecting = false);
   }
 
-  Future<void> _toggleHistorySaving(bool enabled) async {
-    await SessionData().setChatHistorySaving(widget.peer.deviceId, enabled);
+  Future<void> _toggleHistory() async {
+    final enabled = !_historyEnabled;
+    await _session.setChatHistorySaving(_id, enabled);
     if (!mounted) return;
     setState(() => _historyEnabled = enabled);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(enabled ? "Saving chat history" : "Stopped saving new messages"),
-      ),
-    );
+    toast(context, enabled ? 'Saving chat history' : 'Stopped saving new messages');
   }
 
-  Future<void> _confirmDeleteHistory() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete & stop saving?'),
-        content: const Text(
-          "This deletes this conversation from this screen and from "
-          "storage, and turns history saving off for this peer. This "
-          "can't be undone.",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      await SessionData().deleteChatHistory(widget.peer.deviceId);
-      if (mounted) setState(() => _historyEnabled = false);
-    }
+  Future<void> _delete() async {
+    if (!await confirmDeleteHistory(context)) return;
+    await _session.deleteChatHistory(_id);
+    if (mounted) setState(() => _historyEnabled = false);
   }
 
   Future<void> _attachFile() async {
-    // Using file_picker ^10.3.10 (not v11) — v11.0.0-11.0.3 has an
-    // upstream Android build bug where its own android/build.gradle
-    // doesn't apply the kotlin-android plugin, breaking every Android
-    // build (github.com/miguelpruivo/flutter_file_picker/issues/1973).
-    // 10.3.10 already inherits compileSdk from the app, so it's fine for
-    // compileSdk 37 — and it's back to the instance-based API.
     final result = await FilePicker.platform.pickFiles();
     final path = result?.files.single.path;
     if (path == null) return;
-
     try {
-      await SessionData().sendFile(widget.peer.deviceId, File(path));
+      await _session.sendFile(_id, File(path));
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("File send failed: $e")),
-        );
-      }
+      if (mounted) toast(context, 'File send failed: ${errorText(e)}');
     }
   }
 
-  String _formatSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  void _copy(String text) {
+    Clipboard.setData(ClipboardData(text: text));
+    toast(context, 'Copied');
   }
 
-  String _formatTime(DateTime t) =>
-      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
-
-  Widget _bubble({required bool fromMe, required Widget child}) {
-    return Align(
-      alignment: fromMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.75,
-        ),
-        decoration: BoxDecoration(
-          color: fromMe ? Colors.blue[300] : Colors.grey[300],
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: child,
-      ),
-    );
-  }
-
-  Widget _chatBubble(ChatMessage m) {
-    return _bubble(
-      fromMe: m.fromMe,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(m.text),
-          const SizedBox(height: 2),
-          Text(
-            _formatTime(m.time),
-            style: const TextStyle(fontSize: 10, color: Colors.black54),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _fileBubble(FileTransfer t) {
-    final fromMe = t.direction == FileTransferDirection.outgoing;
-
-    String statusLine;
-    switch (t.status) {
-      case FileTransferStatus.offered:
-        statusLine = fromMe ? 'Waiting for them to accept…' : 'Incoming file offer';
-        break;
-      case FileTransferStatus.accepted:
-      case FileTransferStatus.inProgress:
-        statusLine =
-            '${_formatSize(t.bytesTransferred)} / ${_formatSize(t.size)} (${(t.progress * 100).toStringAsFixed(0)}%)';
-        break;
-      case FileTransferStatus.completed:
-        statusLine = fromMe ? 'Sent' : 'Saved to ${t.localPath ?? 'device storage'}';
-        break;
-      case FileTransferStatus.declined:
-        statusLine = fromMe ? 'Declined by peer' : 'Declined';
-        break;
-      case FileTransferStatus.failed:
-        statusLine = 'Transfer failed';
-        break;
+  void _onMenu(ChatAction action) {
+    switch (action) {
+      case ChatAction.reconnect:
+        _reconnect();
+      case ChatAction.save:
+        _session.isPeerSaved(_id)
+            ? _session.forgetSavedPeer(_id)
+            : _session.savePeer(_id);
+      case ChatAction.history:
+        _toggleHistory();
+      case ChatAction.delete:
+        _delete();
     }
-
-    return _bubble(
-      fromMe: fromMe,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.insert_drive_file, size: 18),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(t.name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          if (t.status == FileTransferStatus.inProgress || t.status == FileTransferStatus.accepted)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: SizedBox(
-                width: 160,
-                child: LinearProgressIndicator(value: t.size > 0 ? t.progress.toDouble() : null),
-              ),
-            ),
-          Text(statusLine, style: const TextStyle(fontSize: 11, color: Colors.black54)),
-          const SizedBox(height: 2),
-          Text(
-            _formatTime(t.startedAt),
-            style: const TextStyle(fontSize: 10, color: Colors.black54),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final messages = SessionData().getChatMessages(widget.peer.deviceId);
-    final transfers = SessionData().fileTransfersFor(widget.peer.deviceId);
-    final conn = SessionData().getTcpConnection(widget.peer.deviceId);
-    final connected = conn != null && conn.isConnected;
-    final saved = SessionData().isPeerSaved(widget.peer.deviceId);
+    final messages = _session.getChatMessages(_id);
+    final connected = _session.isConnected(_id);
 
-    // Chat messages and file transfers are separate lists in SessionData
-    // (different lifecycles, different fields) but share one timeline in
-    // the UI, ordered by when each happened.
-    final timeline = <Object>[...messages, ...transfers]
-      ..sort((a, b) {
-        final ta = a is ChatMessage ? a.time : (a as FileTransfer).startedAt;
-        final tb = b is ChatMessage ? b.time : (b as FileTransfer).startedAt;
-        return ta.compareTo(tb);
-      });
+    final entries = <ChatEntry>[
+      ...messages.map(ChatEntry.message),
+      ..._session.fileTransfersFor(_id).map(ChatEntry.file),
+    ]..sort((a, b) => a.time.compareTo(b.time));
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.peer.name),
-        actions: [
-          IconButton(
-            icon: Icon(saved ? Icons.star : Icons.star_border),
-            tooltip: saved ? 'Saved' : 'Save',
-            onPressed: _toggleSave,
-          ),
-          IconButton(
-            icon: Icon(_historyEnabled ? Icons.history : Icons.history_toggle_off),
-            tooltip: _historyEnabled ? 'Saving history — tap to stop' : 'Save history',
-            onPressed: () => _toggleHistorySaving(!_historyEnabled),
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: 'Delete & stop saving',
-            onPressed: (_historyEnabled || messages.isNotEmpty) ? _confirmDeleteHistory : null,
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(20),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Text(
-              connected ? 'Connected' : 'Not connected',
-              style: TextStyle(
-                fontSize: 12,
-                color: connected ? Colors.greenAccent : Colors.redAccent,
-              ),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            FloatingAppBar(
+              title: widget.peer.name,
+              loading: _connecting,
+              showBack: true,
+              actions: [
+                ChatMenu(
+                  connected: connected,
+                  connecting: _connecting,
+                  saved: _session.isPeerSaved(_id),
+                  historyEnabled: _historyEnabled,
+                  canDelete: _historyEnabled || messages.isNotEmpty,
+                  onSelected: _onMenu,
+                ),
+              ],
             ),
-          ),
-        ),
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: timeline.isEmpty
-                ? const Center(child: Text('No messages yet.'))
-                : ListView.builder(
-                    reverse: true,
-                    padding: const EdgeInsets.all(8),
-                    itemCount: timeline.length,
-                    itemBuilder: (context, index) {
-                      final item = timeline[timeline.length - 1 - index];
-                      return item is ChatMessage ? _chatBubble(item) : _fileBubble(item as FileTransfer);
-                    },
-                  ),
-          ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.attach_file),
-                    tooltip: 'Send file',
-                    onPressed: connected ? _attachFile : null,
-                  ),
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      enabled: connected,
-                      decoration: InputDecoration(
-                        hintText: connected ? 'Type a message' : 'Not connected',
-                      ),
-                      onSubmitted: (_) => _send(),
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: FloatingAppBar.sidePadding(context),
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: FloatingAppBar.maxWidth),
+                    child: Column(
+                      children: [
+                        Expanded(child: ChatTimeline(entries: entries, onCopy: _copy)),
+                        _composer(connected),
+                      ],
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.send),
-                    onPressed: connected ? _send : null,
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _composer(bool connected) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.attach_file),
+              tooltip: 'Send file',
+              onPressed: connected ? _attachFile : null,
+            ),
+            Expanded(
+              child: TextField(
+                controller: _controller,
+                enabled: connected,
+                minLines: 1,
+                maxLines: 4,
+                textInputAction: TextInputAction.send,
+                decoration: InputDecoration(
+                  hintText: connected ? 'Type a message' : 'Not connected',
+                ),
+                onSubmitted: (_) => _send(),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.send),
+              color: Theme.of(context).colorScheme.primary,
+              onPressed: connected && _hasText ? _send : null,
+            ),
+          ],
+        ),
       ),
     );
   }

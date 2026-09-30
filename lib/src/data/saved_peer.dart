@@ -1,3 +1,4 @@
+
 class SavedPeer {
   final String deviceId;
   final String name;
@@ -24,7 +25,6 @@ class SavedPeer {
   factory SavedPeer.fromJson(Map<String, dynamic> json) => SavedPeer(
         deviceId: json['deviceId'] as String,
         name: json['name'] as String,
-        // Tolerate records saved before these fields existed.
         lastKnownIp: json['lastKnownIp'] as String? ?? '',
         lastKnownPort: json['lastKnownPort'] as int? ?? 0,
         savedAt: DateTime.parse(json['savedAt'] as String),

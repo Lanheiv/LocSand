@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
 
 import 'package:locsand/src/core_protocols.dart';
-import 'package:locsand/src/data/session_data.dart';
 import 'package:locsand/src/data/peer_data.dart';
-
+import 'package:locsand/src/data/session_data.dart';
 import 'package:locsand/view/chat_screen.dart';
-
+import 'package:locsand/view/components/floating_app_bar.dart';
+import 'package:locsand/view/components/incoming_file_dialog.dart';
+import 'package:locsand/view/components/show_dialog.dart';
 import 'package:locsand/view/pages/home_page.dart';
 import 'package:locsand/view/pages/setting_page.dart';
-
-import 'package:locsand/view/components/show_dialog.dart';
-import 'package:locsand/view/components/app_bar.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -27,17 +25,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     SessionData().onIncomingRequest = (deviceId, name, respond) {
-      if (!mounted) {
-        respond(false);
-        return;
-      }
-      ConnectionRequestDialog.show(context, name: name, respond: respond);
+      if (!mounted) return respond(false);
+      showConnectionRequest(context, name: name, respond: respond);
+    };
+    SessionData().onIncomingSaveRequest = (deviceId, name, respond) {
+      if (!mounted) return respond(false);
+      showSaveRequest(context, name: name, respond: respond);
     };
     SessionData().onIncomingFileOffer = (transfer, respond) {
-      if (!mounted) {
-        respond(false);
-        return;
-      }
+      if (!mounted) return respond(false);
       IncomingFileDialog.show(context, transfer: transfer, respond: respond);
     };
   }
@@ -50,46 +46,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      search?.refresh();
-    }
-  }
-
-  void _openSettings() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const SettingPage()),
-    );
+    if (state == AppLifecycleState.resumed) search?.refresh();
   }
 
   Future<void> _openChat(PeerData peer) async {
-    final conn = SessionData().getTcpConnection(peer.deviceId);
+    if (_connecting) return;
+    final session = SessionData();
 
-    if (conn == null || !conn.isConnected) {
+    if (!session.isConnected(peer.deviceId)) {
       setState(() => _connecting = true);
       try {
-        await SessionData().connectToPeer(peer.deviceId);
+        await session.connectToPeer(peer.deviceId);
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Connect failed: $e")),
-          );
-        }
-      } finally {
-        if (mounted) setState(() => _connecting = false);
+        if (mounted) toast(context, 'Connect failed: ${errorText(e)}');
+      }
+      if (mounted) setState(() => _connecting = false);
+      if (!session.isConnected(peer.deviceId) && !session.isPeerSaved(peer.deviceId)) {
+        return;
       }
     }
 
-    final nowConnected =
-        SessionData().getTcpConnection(peer.deviceId)?.isConnected ?? false;
-    if (!nowConnected && !SessionData().isPeerSaved(peer.deviceId)) return;
-
-    if (mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => ChatScreen(peer: peer)),
-      );
-    }
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ChatScreen(peer: peer)),
+    );
   }
 
   @override
@@ -102,10 +83,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             FloatingAppBar(
               title: 'Locsand',
               loading: _connecting,
-              onSettings: _openSettings,
-              onUser: () {
-                // open user/profile
-              },
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.settings_rounded),
+                  tooltip: 'Settings',
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingPage()),
+                  ),
+                ),
+              ],
             ),
             Expanded(child: HomePage(onTapPeer: _openChat)),
           ],

@@ -7,6 +7,7 @@ class SavedPeerCard extends StatelessWidget {
     required this.name,
     required this.subtitle,
     required this.connected,
+    required this.online,
     required this.onTap,
     required this.onForget,
   });
@@ -14,6 +15,7 @@ class SavedPeerCard extends StatelessWidget {
   final String name;
   final String subtitle;
   final bool connected;
+  final bool online;
   final VoidCallback onTap;
   final VoidCallback onForget;
 
@@ -24,14 +26,14 @@ class SavedPeerCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final initial = name.isEmpty ? '?' : name[0].toUpperCase();
+    final initial = name.isEmpty ? '?' : name.characters.first.toUpperCase();
 
     return SizedBox(
       width: width,
       height: height,
       child: Material(
         color: cardColor(context),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(cardRadius),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
@@ -55,10 +57,8 @@ class SavedPeerCard extends StatelessWidget {
                     PopupMenuButton<String>(
                       padding: EdgeInsets.zero,
                       icon: const Icon(Icons.more_vert, size: 20),
-                      onSelected: (value) {
-                        if (value == 'forget') onForget();
-                      },
-                      itemBuilder: (context) => const [
+                      onSelected: (_) => onForget(),
+                      itemBuilder: (_) => const [
                         PopupMenuItem(value: 'forget', child: Text('Forget')),
                       ],
                     ),
@@ -85,14 +85,10 @@ class SavedPeerCard extends StatelessWidget {
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    Icon(
-                      Icons.circle,
-                      size: 8,
-                      color: connected ? Colors.green : Colors.grey,
-                    ),
+                    StatusDot(active: connected),
                     const SizedBox(width: 6),
                     Text(
-                      connected ? 'Connected' : 'Offline',
+                      connected ? 'Connected' : (online ? 'Nearby' : 'Offline'),
                       style: theme.textTheme.bodySmall,
                     ),
                     const Spacer(),

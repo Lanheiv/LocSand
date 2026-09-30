@@ -14,9 +14,12 @@ Future<void> _startCore() async {
   try {
     await coreProtocols();
   } catch (e) {
-    debugPrint("coreProtocols failed: $e");
+    debugPrint('coreProtocols failed: $e');
   }
 }
+
+ThemeData _theme(Brightness brightness) =>
+    ThemeData(colorSchemeSeed: Colors.blue, brightness: brightness);
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -25,6 +28,8 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      theme: _theme(Brightness.light),
+      darkTheme: _theme(Brightness.dark),
       home: const HomeScreen(),
     );
   }

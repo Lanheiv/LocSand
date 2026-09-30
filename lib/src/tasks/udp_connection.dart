@@ -253,7 +253,6 @@ class UdpPeerSearch {
     _sendInfo(d.address, d.port);
   }
 
-
   List<int> _infoBytes() => utf8.encode(jsonEncode({
         'messageType': _typeInfo,
         'deviceId': deviceId,

@@ -25,7 +25,6 @@ Future<void> coreProtocols() async {
 
   SessionData().userId = nodeID;
   SessionData().userName = nodeName;
-  SessionData().userOnlineTime = DateTime.now();
 
   try {
     await SessionData().loadSavedPeers();

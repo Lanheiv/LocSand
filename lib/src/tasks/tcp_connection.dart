@@ -47,7 +47,6 @@ class TcpPeerConnection {
   }
 
   bool get isConnected => _connected && _socket != null;
-  X509Certificate? get peerCertificate => _socket?.peerCertificate;
 
   Future<void> connect({Duration timeout = const Duration(seconds: 5)}) async {
     if (_connected) return;
@@ -165,10 +164,10 @@ class TcpPeerConnection {
   }
 
   Future<void> disconnect() async {
+    _connected = false;
     _stopKeepAlive();
     await _subscription?.cancel();
     _socket?.destroy();
     _socket = null;
-    _connected = false;
   }
 }

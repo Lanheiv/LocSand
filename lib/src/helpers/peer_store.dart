@@ -5,10 +5,6 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:locsand/src/data/saved_peer.dart';
 
-/// Persists the list of peers the user has explicitly chosen to "save",
-/// so they're still there the next time the app starts — separate from
-/// `SessionData.peers`, which only reflects who is currently reachable on
-/// the network right now.
 class SavedPeersStore {
   static final SavedPeersStore _instance = SavedPeersStore._internal();
   factory SavedPeersStore() => _instance;
@@ -37,16 +33,12 @@ class SavedPeersStore {
           _saved[peer.deviceId] = peer;
         }
       } catch (_) {
-        // Corrupt file — start with an empty saved list rather than crash.
         _saved.clear();
       }
     }
     _loaded = true;
   }
 
-  /// Synchronous — assumes [ensureLoaded] has already completed, which it
-  /// will have by the time any UI or connection-handling code runs, since
-  /// it's awaited once during app startup.
   List<SavedPeer> get all => _saved.values.toList();
 
   bool isSaved(String deviceId) => _saved.containsKey(deviceId);
