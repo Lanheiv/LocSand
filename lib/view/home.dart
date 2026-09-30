@@ -6,11 +6,11 @@ import 'package:locsand/src/data/peer_data.dart';
 
 import 'package:locsand/view/chat_screen.dart';
 
-import 'package:locsand/view/pages/chat_page.dart';
-import 'package:locsand/view/pages/setting_page.dart';
 import 'package:locsand/view/pages/home_page.dart';
+import 'package:locsand/view/pages/setting_page.dart';
 
 import 'package:locsand/view/components/show_dialog.dart';
+import 'package:locsand/view/components/app_bar.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,25 +22,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _connecting = false;
 
-  int currentPage = 0;
-
-  List<Widget> get pages => [
-        HomePage(onTapPeer: _openChat),
-        ChatPage(onTapPeer: _openChat),
-        const SettingPage(),
-      ];
-
-  final List<String> pageTitles = const [
-    'Home',
-    'Chats',
-    'Settings',
-  ];
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    SessionData().addListener(_onChanged);
     SessionData().onIncomingRequest = (deviceId, name, respond) {
       if (!mounted) {
         respond(false);
@@ -60,7 +45,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    SessionData().removeListener(_onChanged);
     super.dispose();
   }
 
@@ -71,8 +55,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _onChanged() {
-    if (mounted) setState(() {});
+  void _openSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SettingPage()),
+    );
   }
 
   Future<void> _openChat(PeerData peer) async {
@@ -93,7 +80,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     }
 
-    final nowConnected = SessionData().getTcpConnection(peer.deviceId)?.isConnected ?? false;
+    final nowConnected =
+        SessionData().getTcpConnection(peer.deviceId)?.isConnected ?? false;
     if (!nowConnected && !SessionData().isPeerSaved(peer.deviceId)) return;
 
     if (mounted) {
@@ -107,31 +95,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(pageTitles[currentPage]),
-        actions: [
-          if (_connecting)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-              ),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            FloatingAppBar(
+              title: 'Locsand',
+              loading: _connecting,
+              onSettings: _openSettings,
+              onUser: () {
+                // open user/profile
+              },
             ),
-        ],
-      ),
-      body: pages[currentPage],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: currentPage,
-        onTap: (index) {
-          setState(() => currentPage = index);
-        },
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
-          BottomNavigationBarItem(icon: Icon(Icons.chat), label: "Chats"),
-          BottomNavigationBarItem(icon: Icon(Icons.more_horiz), label: "Settings"),
-        ],
+            Expanded(child: HomePage(onTapPeer: _openChat)),
+          ],
+        ),
       ),
     );
   }
