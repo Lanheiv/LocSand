@@ -76,26 +76,21 @@ class TextMessageContent extends StatelessWidget {
     required this.time,
     required this.fromMe,
   });
-
   @override
   Widget build(BuildContext context) {
     final colors = BubbleColors.of(context, fromMe);
-    return Stack(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Text.rich(
-          TextSpan(
-            text: text,
-            style: TextStyle(color: colors.text, fontSize: 15.5, height: 1.25),
-            children: const [WidgetSpan(child: SizedBox(width: 50, height: 1))],
-          ),
+        SelectableText(
+          text,
+          style: TextStyle(color: colors.text, fontSize: 15.5, height: 1.25),
         ),
-        Positioned(
-          right: 0,
-          bottom: 0,
-          child: Text(
-            formatClock(time),
-            style: TextStyle(color: colors.meta, fontSize: 11),
-          ),
+        const SizedBox(height: 2),
+        Text(
+          formatClock(time),
+          style: TextStyle(color: colors.meta, fontSize: 11),
         ),
       ],
     );

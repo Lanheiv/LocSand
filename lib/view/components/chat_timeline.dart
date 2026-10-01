@@ -61,7 +61,9 @@ class ChatTimeline extends StatelessWidget {
       child: MessageBubble(
         fromMe: e.fromMe,
         tail: next == null || !e.joins(next),
-        onLongPress: copy == null || copy.isEmpty ? null : () => onCopy(copy),
+        onLongPress: e.message != null || copy == null || copy.isEmpty
+          ? null
+          : () => onCopy(copy),
         child: e.message != null
             ? TextMessageContent(text: e.message!.text, time: e.time, fromMe: e.fromMe)
             : FileMessageContent(transfer: e.transfer!),

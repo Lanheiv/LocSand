@@ -1,7 +1,29 @@
 import 'package:flutter/material.dart';
 
+import 'package:locsand/view/components/card_style.dart';
+
 void toast(BuildContext context, String message) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  final scheme = Theme.of(context).colorScheme;
+  final width = MediaQuery.sizeOf(context).width;
+  final side = width > 600 ? (width - 400) / 2 : 24.0;
+
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: scheme.onSurface),
+        ),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: cardColor(context),
+        elevation: 4,
+        duration: const Duration(seconds: 2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        margin: EdgeInsets.fromLTRB(side, 0, side, 90),
+      ),
+    );
 }
 
 String errorText(Object e) => e is StateError ? e.message : '$e';
