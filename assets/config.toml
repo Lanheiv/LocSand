@@ -1,5 +1,5 @@
 [node]
-name = "pc"
+name = "User"
 
 [network]
 udp_port = 5000

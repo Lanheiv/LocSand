@@ -111,4 +111,14 @@ class ChatHistoryStore {
       _enabled[deviceId] = false;
     });
   }
+
+  Future<void> deleteAll() {
+    return _serial(() async {
+      final dir = await _ensureDir();
+      await for (final entity in dir.list()) {
+        if (entity is File) await entity.delete();
+      }
+      _enabled.clear();
+    });
+  }
 }

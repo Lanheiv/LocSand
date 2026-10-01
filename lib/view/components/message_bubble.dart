@@ -83,9 +83,12 @@ class TextMessageContent extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       mainAxisSize: MainAxisSize.min,
       children: [
-        SelectableText(
-          text,
-          style: TextStyle(color: colors.text, fontSize: 15.5, height: 1.25),
+        SelectionArea(
+          child: Text(
+            text,
+            textWidthBasis: TextWidthBasis.longestLine,
+            style: TextStyle(color: colors.text, fontSize: 15.5, height: 1.25),
+          ),
         ),
         const SizedBox(height: 2),
         Text(

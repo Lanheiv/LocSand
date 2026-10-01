@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import 'package:locsand/view/components/card_style.dart';
 
 void toast(BuildContext context, String message) {
@@ -107,5 +106,14 @@ Future<bool> confirmDeleteHistory(BuildContext context) => _confirm(
           'storage, and turns history saving off for this peer. This '
           'cannot be undone.',
       yes: 'Delete',
+      danger: true,
+    );
+
+Future<bool> confirmClearAllHistory(BuildContext context) => _confirm(
+      context,
+      title: 'Clear all chat history?',
+      body: 'This deletes every saved conversation from this device and '
+          'turns history saving off for all peers. This cannot be undone.',
+      yes: 'Clear',
       danger: true,
     );

@@ -26,17 +26,17 @@ class SettingsStore {
     }
   }
 
-  Future<String?> getReceiveDir() async {
+  Future<String?> get(String key) async {
     await _ensureLoaded();
-    return _data['receiveDir'] as String?;
+    return _data[key] as String?;
   }
 
-  Future<void> setReceiveDir(String? dir) async {
+  Future<void> set(String key, String? value) async {
     await _ensureLoaded();
-    if (dir == null) {
-      _data.remove('receiveDir');
+    if (value == null) {
+      _data.remove(key);
     } else {
-      _data['receiveDir'] = dir;
+      _data[key] = value;
     }
     await _file!.writeAsString(jsonEncode(_data));
   }

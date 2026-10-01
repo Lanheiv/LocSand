@@ -70,6 +70,12 @@ mixin ChatSession on ChangeNotifier {
     if (messages.isNotEmpty) notifyListeners();
   }
 
+  Future<void> clearAllChatHistory() async {
+    chatMessages.clear();
+    notifyListeners();
+    await ChatHistoryStore().deleteAll();
+  }
+
   Future<void> deleteChatHistory(String deviceId) async {
     chatMessages.remove(deviceId);
     notifyListeners();

@@ -97,7 +97,9 @@ class _HomePageState extends State<HomePage> {
                 SliverToBoxAdapter(
                   child: nearby.isEmpty
                       ? const _EmptyNote(
-                          'No devices found.'
+                          'No devices found. Both devices need to be on the '
+                          'same Wi-Fi network (guest networks often block '
+                          'discovery). Pull down to search again.',
                         )
                       : HorizontalScroller(
                           height: NearbyPeerCard.height,

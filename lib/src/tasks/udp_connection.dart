@@ -19,10 +19,11 @@ class UdpPeerSearch {
 
   static final InternetAddress _limitedBroadcast = InternetAddress('255.255.255.255');
 
-  final String deviceId, deviceName;
+  final String deviceId;
+  String deviceName;
   final int udpPort, tcpPort;
   final InternetAddress broadcastAddress;
-  final bool enabledBroadcast;
+  bool enabledBroadcast;
 
   final void Function(PeerData) onPeerFound;
 
@@ -69,6 +70,14 @@ class UdpPeerSearch {
     await _announce(askForPeers: true);
   }
 
+  void setBroadcast(bool value) {
+    if (enabledBroadcast == value) return;
+    enabledBroadcast = value;
+    if (_socket == null) return;
+    _stopAnnouncing();
+    if (value) _startAnnouncing();
+  }
+
   Future<void> _bind() async {
     if (!_wanted) return;
 
@@ -113,13 +122,17 @@ class UdpPeerSearch {
     });
   }
 
-  void _closeSocket() {
+  void _stopAnnouncing() {
     _announceTimer?.cancel();
     _announceTimer = null;
     for (final t in _burstTimers) {
       t.cancel();
     }
     _burstTimers.clear();
+  }
+
+  void _closeSocket() {
+    _stopAnnouncing();
 
     final socket = _socket;
     _socket = null;
