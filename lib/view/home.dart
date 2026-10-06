@@ -46,7 +46,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) search?.refresh();
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+        SessionData().awayAll();
+      case AppLifecycleState.resumed:
+        SessionData().backAll();
+        search?.refresh();
+      default:
+        break;
+    }
   }
 
   Future<void> _openChat(PeerData peer) async {

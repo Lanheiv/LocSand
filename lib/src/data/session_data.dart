@@ -29,6 +29,8 @@ class SessionData extends ChangeNotifier
   final Map<String, TcpPeerConnection> _connections = {};
   final Map<String, Future<TcpPeerConnection>> _pending = {};
   final Map<String, DateTime> _autoRetryAt = {};
+  final Map<String, DateTime> _autoWaitSince = {};
+  bool _away = false;
 
   void Function(String deviceId, String name, void Function(bool accept) respond)?
       onIncomingRequest;
@@ -80,7 +82,22 @@ class SessionData extends ChangeNotifier
 
     final id = peer.deviceId;
     final now = DateTime.now();
-    if (isPeerSaved(id) &&
+    if (isConnected(id)) _autoWaitSince.remove(id);
+
+    // Avoid both devices dialing each other at the same moment (they would
+    // close each other's sockets). The device with the smaller id dials
+    // first; the other one only dials if that did not work after a while.
+    var myTurn = true;
+    if (isPeerSaved(id) && !isConnected(id)) {
+      final iAmFirst = (userId ?? '').compareTo(id) < 0;
+      if (!iAmFirst) {
+        final since = _autoWaitSince.putIfAbsent(id, () => now);
+        myTurn = now.difference(since) >= const Duration(seconds: 8);
+      }
+    }
+
+    if (myTurn &&
+        isPeerSaved(id) &&
         !isConnected(id) &&
         now.isAfter(_autoRetryAt[id] ?? DateTime(0))) {
       _autoRetryAt[id] = now.add(_autoConnectBackoff);
@@ -157,9 +174,27 @@ class SessionData extends ChangeNotifier
     final current = _connections[deviceId];
     if (ifCurrent != null && !identical(current, ifCurrent)) return;
     _connections.remove(deviceId);
+    _autoWaitSince.remove(deviceId);
     if (closeSocket) current?.disconnect();
     failTransfersFor(deviceId);
     notifyListeners();
+  }
+
+  /// App goes to the background (file picker, other app, ...).
+  void awayAll() {
+    if (_away) return;
+    _away = true;
+    for (final c in _connections.values) {
+      c.markAway();
+    }
+  }
+
+  /// App is back in the foreground.
+  void backAll() {
+    _away = false;
+    for (final c in _connections.values) {
+      c.markBack();
+    }
   }
 
   void handlePeerMessage(String deviceId, Map<String, dynamic> msg) {

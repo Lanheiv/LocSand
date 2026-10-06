@@ -9,6 +9,7 @@ import 'package:locsand/src/helpers/peer_trust.dart';
 class TcpPeerConnection {
   static const Duration _pingEvery = Duration(seconds: 15);
   static const Duration _deadAfter = Duration(seconds: 45);
+  static const Duration _awayGrace = Duration(minutes: 5);
 
   String? deviceId;
 
@@ -19,6 +20,9 @@ class TcpPeerConnection {
   StreamSubscription<String>? _subscription;
   Timer? _keepAlive;
   DateTime _lastRx = DateTime.now();
+  // Set when the peer says it is going to the background (e.g. file picker).
+  // While it is in the future we do not treat silence as a dead connection.
+  DateTime? _graceUntil;
   bool _connected = false;
 
   final Function(Map<String, dynamic> message)? onMessage;
@@ -103,9 +107,14 @@ class TcpPeerConnection {
         .listen(
           (line) {
             _lastRx = DateTime.now();
+            _graceUntil = null; // any traffic means the peer is back
             try {
               final json = jsonDecode(line) as Map<String, dynamic>;
               if (json['type'] == 'ping') return;
+              if (json['type'] == 'away') {
+                _graceUntil = DateTime.now().add(_awayGrace);
+                return;
+              }
               onMessage?.call(json);
             } catch (e) {
               log("Bad message from ${deviceId ?? ip}: $e");
@@ -115,6 +124,7 @@ class TcpPeerConnection {
             log("TCP error ${deviceId ?? ip}: $e");
             _connected = false;
             _stopKeepAlive();
+            _socket?.destroy();
             onError?.call(e);
             onDisconnected?.call();
           },
@@ -122,6 +132,7 @@ class TcpPeerConnection {
             log("TCP done ${deviceId ?? ip}");
             _connected = false;
             _stopKeepAlive();
+            _socket?.destroy();
             onDisconnected?.call();
           },
           cancelOnError: true,
@@ -133,7 +144,9 @@ class TcpPeerConnection {
     _keepAlive = Timer.periodic(_pingEvery, (_) {
       if (!_connected) return;
 
-      if (DateTime.now().difference(_lastRx) > _deadAfter) {
+      final now = DateTime.now();
+      final inGrace = _graceUntil != null && now.isBefore(_graceUntil!);
+      if (!inGrace && now.difference(_lastRx) > _deadAfter) {
         log("No traffic from ${deviceId ?? ip} for ${_deadAfter.inSeconds}s — closing");
         final callback = onDisconnected;
         unawaited(disconnect());
@@ -150,6 +163,25 @@ class TcpPeerConnection {
   void _stopKeepAlive() {
     _keepAlive?.cancel();
     _keepAlive = null;
+  }
+
+  /// Tell the peer we are leaving the foreground, so it will not close the
+  /// connection while we are silent.
+  void markAway() {
+    if (!_connected) return;
+    try {
+      _socket?.write('{"type":"away"}\n');
+    } catch (_) {}
+  }
+
+  /// We are back in the foreground: restart the silence timer and ping.
+  void markBack() {
+    if (!_connected) return;
+    _lastRx = DateTime.now();
+    _graceUntil = null;
+    try {
+      _socket?.write('{"type":"ping"}\n');
+    } catch (_) {}
   }
 
   void send(Map<String, dynamic> message) {

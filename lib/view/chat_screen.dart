@@ -25,6 +25,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _historyEnabled = false;
   bool _hasText = false;
   bool _connecting = false;
+  bool _picking = false;
 
   String get _id => widget.peer.deviceId;
 
@@ -89,10 +90,31 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _attachFile() async {
-    final result = await FilePicker.platform.pickFiles();
-    final path = result?.files.single.path;
+    if (_picking) return;
+    _picking = true;
+    String? path;
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        withData: false,
+        withReadStream: false,
+      );
+      path = result?.files.firstOrNull?.path;
+    } catch (e) {
+      if (mounted) toast(context, 'Could not open file picker: ${errorText(e)}');
+    } finally {
+      _picking = false;
+    }
     if (path == null) return;
     try {
+      // The connection may have dropped while the picker was open.
+      if (!_session.isConnected(_id)) {
+        if (mounted) setState(() => _connecting = true);
+        try {
+          await _session.connectToPeer(_id);
+        } finally {
+          if (mounted) setState(() => _connecting = false);
+        }
+      }
       await _session.sendFile(_id, File(path));
     } catch (e) {
       if (mounted) toast(context, 'File send failed: ${errorText(e)}');
