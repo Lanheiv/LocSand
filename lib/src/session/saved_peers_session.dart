@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:locsand/src/data/peer_data.dart';
 import 'package:locsand/src/data/saved_peer.dart';
 import 'package:locsand/src/helpers/peer_store.dart';
-import 'package:locsand/src/helpers/peer_trust.dart';
 import 'package:locsand/src/tasks/tcp_connection.dart';
 
 mixin SavedPeersSession on ChangeNotifier {
@@ -50,7 +49,6 @@ mixin SavedPeersSession on ChangeNotifier {
 
   Future<void> forgetSavedPeer(String deviceId) async {
     await SavedPeersStore().remove(deviceId);
-    await PeerTrustStore().forget(deviceId);
     notifyListeners();
   }
 

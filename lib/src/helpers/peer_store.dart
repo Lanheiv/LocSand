@@ -2,8 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
 import 'package:locsand/src/data/saved_peer.dart';
+import 'package:locsand/src/helpers/atomic_file.dart';
+import 'package:path_provider/path_provider.dart';
 
 class SavedPeersStore {
   static final SavedPeersStore _instance = SavedPeersStore._internal();
@@ -14,6 +15,7 @@ class SavedPeersStore {
   File? _file;
   bool _loaded = false;
   Future<void>? _loading;
+  final SerialQueue _queue = SerialQueue();
 
   Future<void> ensureLoaded() {
     if (_loaded) return Future.value();
@@ -25,15 +27,18 @@ class SavedPeersStore {
     _file = File('${dir.path}/saved_peers.json');
 
     if (await _file!.exists()) {
+      var decoded = <dynamic>[];
       try {
-        final content = await _file!.readAsString();
-        final decoded = jsonDecode(content) as List<dynamic>;
-        for (final item in decoded) {
+        decoded = jsonDecode(await _file!.readAsString()) as List<dynamic>;
+      } catch (_) {
+        await quarantineCorruptFile(_file!);
+      }
+      // One bad entry must not cost the user every other saved peer.
+      for (final item in decoded) {
+        try {
           final peer = SavedPeer.fromJson(item as Map<String, dynamic>);
           _saved[peer.deviceId] = peer;
-        }
-      } catch (_) {
-        _saved.clear();
+        } catch (_) {}
       }
     }
     _loaded = true;
@@ -69,9 +74,12 @@ class SavedPeersStore {
     }
   }
 
-  Future<void> _persist() async {
-    if (_file == null) return;
-    final list = _saved.values.map((p) => p.toJson()).toList();
-    await _file!.writeAsString(jsonEncode(list));
+  Future<void> _persist() {
+    return _queue.run(() async {
+      if (_file == null) return;
+      // Encoded when the task runs, so the newest state always wins.
+      final list = _saved.values.map((p) => p.toJson()).toList();
+      await writeFileAtomic(_file!, jsonEncode(list));
+    });
   }
 }

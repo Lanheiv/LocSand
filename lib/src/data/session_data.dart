@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:locsand/src/data/peer_data.dart';
 import 'package:locsand/src/data/saved_peer.dart';
+import 'package:locsand/src/helpers/auth_protocol.dart';
+import 'package:locsand/src/helpers/device_identity.dart';
 import 'package:locsand/src/helpers/peer_store.dart';
 import 'package:locsand/src/session/chat_session.dart';
 import 'package:locsand/src/session/file_session.dart';
@@ -19,6 +23,19 @@ class SessionData extends ChangeNotifier
   static const Duration _autoConnectBackoff = Duration(seconds: 15);
   static const Duration _declinedBackoff = Duration(minutes: 5);
   static const Duration _connectTimeout = Duration(seconds: 30);
+
+  /// Upper bound for the nearby-peer list, so a UDP flood with random ids
+  /// cannot grow memory or the UI without limit.
+  static const int _maxNearbyPeers = 256;
+
+  /// Set when the network core could not start (port busy, key error, ...).
+  /// The UI shows it so the user does not just see an empty list.
+  String? startupError;
+
+  void reportStartupError(String message) {
+    startupError = message;
+    notifyListeners();
+  }
 
   @override
   String? userId;
@@ -77,10 +94,19 @@ class SessionData extends ChangeNotifier
       isConnected(deviceId) || peers.containsKey(deviceId);
 
   void addOrUpdatePeer(PeerData peer) {
-    peers[peer.deviceId] = peer;
-    notifyListeners();
-
     final id = peer.deviceId;
+    final old = peers[id];
+    if (old == null && peers.length >= _maxNearbyPeers && !isPeerSaved(id)) return;
+
+    peers[id] = peer;
+    // Refreshing lastSeen every few seconds must not rebuild the whole UI.
+    if (old == null ||
+        old.name != peer.name ||
+        old.ip != peer.ip ||
+        old.port != peer.port) {
+      notifyListeners();
+    }
+
     final now = DateTime.now();
     if (isConnected(id)) _autoWaitSince.remove(id);
 
@@ -124,35 +150,113 @@ class SessionData extends ChangeNotifier
     final port = peer?.port ?? saved?.lastKnownPort ?? 0;
     if (ip.isEmpty || port == 0) throw StateError('Device not reachable');
 
+    final identity = await DeviceIdentity.load();
+    final challenge = Completer<Map<String, dynamic>>();
     final response = Completer<bool>();
+    var authenticated = false;
     late final TcpPeerConnection conn;
     conn = TcpPeerConnection(
       deviceId: deviceId,
       ip: ip,
       port: port,
       onMessage: (msg) {
+        final type = msg['type'];
+        if (!authenticated) {
+          if (type == 'challenge' && !challenge.isCompleted) challenge.complete(msg);
+          return;
+        }
         if (response.isCompleted) {
           handlePeerMessage(deviceId, msg);
-        } else if (msg['type'] == 'accept' || msg['type'] == 'reject') {
-          response.complete(msg['type'] == 'accept');
+        } else if (type == 'accept' || type == 'reject') {
+          response.complete(type == 'accept');
         }
       },
       onDisconnected: () {
+        if (!challenge.isCompleted) challenge.complete(const {});
         if (!response.isCompleted) response.complete(false);
         disconnectFromPeer(deviceId, closeSocket: false, ifCurrent: conn);
       },
     );
 
-    await conn.connect();
-    conn.send({'type': 'request', 'deviceId': userId, 'name': userName});
+    try {
+      await conn.connect();
 
-    final accepted = await response.future.timeout(
-      _connectTimeout,
-      onTimeout: () => false,
-    );
-    if (!accepted) {
+      final clientNonce = newNonce();
+      conn.send({
+        'type': 'hello',
+        'deviceId': identity.deviceId,
+        'name': userName,
+        'pub': identity.publicKeyPem,
+        'nonce': clientNonce,
+      });
+
+      final ch = await challenge.future.timeout(
+        _connectTimeout,
+        onTimeout: () => const <String, dynamic>{},
+      );
+
+      // The id we dialed is the hash of the public key we expect. A device
+      // that does not hold the matching private key cannot produce a valid
+      // signature, no matter what its UDP announcement claimed.
+      final peerPub = ch['pub'];
+      final serverNonce = ch['nonce'];
+      final sigB64 = ch['sig'];
+      final certDer = conn.serverCertDer;
+      Uint8List? signature;
+      try {
+        if (sigB64 is String && sigB64.length <= 1024) signature = base64Decode(sigB64);
+      } catch (_) {}
+
+      final verified = peerPub is String &&
+          peerPub.length <= 1024 &&
+          serverNonce is String &&
+          serverNonce.length >= 16 &&
+          serverNonce.length <= 64 &&
+          certDer != null &&
+          signature != null &&
+          deviceIdFromPublicKey(peerPub) == deviceId &&
+          DeviceIdentity.verify(
+            peerPub,
+            authTranscript(
+              role: 'server',
+              clientId: identity.deviceId,
+              serverId: deviceId,
+              clientNonce: clientNonce,
+              serverNonce: serverNonce,
+              serverCertDer: certDer,
+            ),
+            signature,
+          );
+      if (!verified) {
+        throw StateError(
+          'Could not verify the identity of this device. It may be offline, '
+          'running an old version, or another device is pretending to be it.',
+        );
+      }
+
+      authenticated = true;
+      conn.send({
+        'type': 'request',
+        'sig': base64Encode(identity.sign(authTranscript(
+          role: 'client',
+          clientId: identity.deviceId,
+          serverId: deviceId,
+          clientNonce: clientNonce,
+          serverNonce: serverNonce as String,
+          serverCertDer: certDer!,
+        ))),
+      });
+
+      final accepted = await response.future.timeout(
+        _connectTimeout,
+        onTimeout: () => false,
+      );
+      if (!accepted) {
+        throw StateError('Connection was declined or timed out');
+      }
+    } catch (_) {
       await conn.disconnect();
-      throw StateError('Connection was declined or timed out');
+      rethrow;
     }
 
     registerIncomingConnection(deviceId, conn);

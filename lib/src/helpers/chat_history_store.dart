@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:locsand/src/helpers/atomic_file.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:locsand/src/data/chat_message.dart';
 
@@ -48,6 +49,7 @@ class ChatHistoryStore {
       final decoded = jsonDecode(content) as Map<String, dynamic>;
       return decoded;
     } catch (_) {
+      await quarantineCorruptFile(file);
       return {'enabled': false, 'messages': []};
     }
   }

@@ -9,11 +9,11 @@ class TlsContext {
   static Future<SecurityContext> serverContext() async {
     if (_serverContext != null) return _serverContext!;
 
-    final (pemFile, keyFile) = await CertGenerator.ensureDeviceCertificate();
+    final files = await CertGenerator.ensureDeviceCertificate();
 
     final context = SecurityContext();
-    context.useCertificateChain(pemFile.path);
-    context.usePrivateKey(keyFile.path);
+    context.useCertificateChain(files.cert.path);
+    context.usePrivateKey(files.key.path);
 
     _serverContext = context;
     return context;

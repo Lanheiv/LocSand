@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'package:locsand/src/data/peer_data.dart';
 import 'package:locsand/src/data/session_data.dart';
+import 'package:locsand/src/session/chat_session.dart';
 import 'package:locsand/view/components/chat_menu.dart';
 import 'package:locsand/view/components/chat_timeline.dart';
 import 'package:locsand/view/components/floating_app_bar.dart';
@@ -213,6 +214,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 minLines: 1,
                 maxLines: 4,
                 textInputAction: TextInputAction.send,
+                inputFormatters: [
+                  LengthLimitingTextInputFormatter(ChatSession.maxMessageLength),
+                ],
                 decoration: InputDecoration(
                   hintText: connected ? 'Type a message' : 'Not connected',
                 ),

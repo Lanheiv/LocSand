@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:locsand/src/core_protocols.dart';
+import 'package:locsand/src/data/session_data.dart';
 import 'package:locsand/src/helpers/theme_mode.dart';
 import 'package:locsand/view/home.dart';
 
@@ -17,6 +18,7 @@ Future<void> _startCore() async {
     await coreProtocols();
   } catch (e) {
     debugPrint('coreProtocols failed: $e');
+    SessionData().reportStartupError('Networking could not start: $e');
   }
 }
 

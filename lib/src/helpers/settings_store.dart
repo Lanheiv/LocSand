@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:locsand/src/helpers/atomic_file.dart';
 import 'package:path_provider/path_provider.dart';
 
 class SettingsStore {
@@ -11,6 +12,7 @@ class SettingsStore {
   Map<String, dynamic> _data = {};
   File? _file;
   Future<void>? _loading;
+  final SerialQueue _queue = SerialQueue();
 
   Future<void> _ensureLoaded() => _loading ??= _load();
 
@@ -19,16 +21,20 @@ class SettingsStore {
     _file = File('${dir.path}/settings.json');
     try {
       if (await _file!.exists()) {
-        _data = jsonDecode(await _file!.readAsString()) as Map<String, dynamic>;
+        final decoded = jsonDecode(await _file!.readAsString());
+        if (decoded is! Map<String, dynamic>) throw const FormatException();
+        _data = decoded;
       }
     } catch (_) {
+      await quarantineCorruptFile(_file!);
       _data = {};
     }
   }
 
   Future<String?> get(String key) async {
     await _ensureLoaded();
-    return _data[key] as String?;
+    final value = _data[key];
+    return value is String ? value : null;
   }
 
   Future<void> set(String key, String? value) async {
@@ -38,6 +44,6 @@ class SettingsStore {
     } else {
       _data[key] = value;
     }
-    await _file!.writeAsString(jsonEncode(_data));
+    await _queue.run(() => writeFileAtomic(_file!, jsonEncode(_data)));
   }
 }

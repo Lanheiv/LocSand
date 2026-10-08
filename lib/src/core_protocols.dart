@@ -42,6 +42,10 @@ Future<void> coreProtocols() async {
     tcpOk = true;
   } catch (e) {
     log("TCP server error: $e");
+    SessionData().reportStartupError(
+      'Cannot accept connections on TCP port $tcpPort ($e). '
+      'Other devices will not be able to reach this one.',
+    );
   }
 
   discoveryAllowed = broadcastEnabled && tcpOk;

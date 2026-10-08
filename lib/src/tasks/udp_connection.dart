@@ -4,6 +4,7 @@ import 'dart:developer';
 import 'dart:io';
 
 import 'package:locsand/src/data/peer_data.dart';
+import 'package:locsand/src/helpers/auth_protocol.dart';
 
 class UdpPeerSearch {
   static const String _typeInfo = 'devicInfo';
@@ -16,6 +17,13 @@ class UdpPeerSearch {
     Duration(seconds: 1),
     Duration(seconds: 3),
   ];
+
+  // Discovery packets are tiny; anything bigger is junk. Each source address
+  // may send only a few packets per second (the app itself sends about one
+  // every ten seconds), so a flood is dropped before any JSON is parsed.
+  static const int _maxPacketBytes = 1024;
+  static const int _maxPacketsPerSecondPerIp = 20;
+  static const int _maxTrackedSources = 1024;
 
   static final InternetAddress _limitedBroadcast = InternetAddress('255.255.255.255');
 
@@ -39,6 +47,7 @@ class UdpPeerSearch {
 
   final Map<String, DateTime> _lastHeard = {};
   final Map<String, DateTime> _lastReplyTo = {};
+  final Map<String, _RateBucket> _rate = {};
 
   UdpPeerSearch({
     required this.deviceId,
@@ -214,7 +223,21 @@ class UdpPeerSearch {
     }
   }
 
+  bool _allowFrom(String ip) {
+    final now = DateTime.now();
+    final bucket = _rate[ip];
+    if (bucket == null || now.difference(bucket.start) >= const Duration(seconds: 1)) {
+      if (_rate.length >= _maxTrackedSources) _rate.clear();
+      _rate[ip] = _RateBucket(now);
+      return true;
+    }
+    bucket.count++;
+    return bucket.count <= _maxPacketsPerSecondPerIp;
+  }
+
   void _handle(Datagram d) {
+    if (d.data.length > _maxPacketBytes) return;
+    if (!_allowFrom(d.address.address)) return;
     try {
       final json = jsonDecode(utf8.decode(d.data, allowMalformed: true));
       if (json is! Map<String, dynamic>) return;
@@ -222,7 +245,7 @@ class UdpPeerSearch {
       final type = json['messageType'];
       final id = json['deviceId'];
       if (type is! String || id is! String) return;
-      if (id.isEmpty || id.length > 128) return;
+      if (!deviceIdPattern.hasMatch(id)) return;
       if (id == deviceId) return;
 
       if (type == _typeInfo) {
@@ -291,4 +314,10 @@ class UdpPeerSearch {
       return false;
     }
   }
+}
+
+class _RateBucket {
+  _RateBucket(this.start);
+  final DateTime start;
+  int count = 1;
 }

@@ -6,7 +6,9 @@ import 'package:locsand/src/helpers/chat_history_store.dart';
 import 'package:locsand/src/tasks/tcp_connection.dart';
 
 mixin ChatSession on ChangeNotifier {
-  static const int _maxIncomingLength = 8000;
+  /// Same limit for sending and receiving, so our own client never sends
+  /// something the other side would cut.
+  static const int maxMessageLength = 8000;
 
   TcpPeerConnection? liveConnection(String deviceId);
 
@@ -18,8 +20,8 @@ mixin ChatSession on ChangeNotifier {
 
   void receiveChatMessage(String deviceId, String text) {
     if (text.isEmpty) return;
-    if (text.length > _maxIncomingLength) {
-      text = text.substring(0, _maxIncomingLength);
+    if (text.length > maxMessageLength) {
+      text = text.substring(0, maxMessageLength);
     }
     unawaited(_addMessage(
       deviceId,
@@ -30,6 +32,9 @@ mixin ChatSession on ChangeNotifier {
   void sendChatMessage(String deviceId, String text) {
     final conn = liveConnection(deviceId);
     if (conn == null) throw StateError('Not connected');
+    if (text.length > maxMessageLength) {
+      throw StateError('Message is too long (max $maxMessageLength characters)');
+    }
     conn.send({'type': 'chat', 'text': text});
     unawaited(_addMessage(
       deviceId,
