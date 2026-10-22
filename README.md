@@ -36,7 +36,6 @@ LocSand is designed so that other people on the same Wi-Fi cannot impersonate yo
 | macOS    | Supported (entitlements required) |
 | Windows  | Supported |
 | Linux    | Supported |
-| Web      | **Not supported.** The app uses `dart:io` sockets (`RawDatagramSocket`, `SecureSocket`), which Flutter Web does not provide. |
 
 ## Getting started
 
@@ -58,34 +57,6 @@ Pick a target with `-d`, for example `flutter run -d linux`, `-d windows`, `-d m
 
 To try it out, run the app on **two devices connected to the same Wi-Fi network**. They should show up under **Nearby**.
 
-### Test
-
-```bash
-flutter test
-```
-
-The tests cover the data models, line framing, device identity, auth protocol, atomic file writes, file naming, chat and file sessions, and the UDP and TCP layers (including real TLS pairs).
-
-## Configuration
-
-Network settings live in [`assets/config.toml`](assets/config.toml):
-
-```toml
-[node]
-name = "User"                  # default display name (can be changed in Settings)
-
-[network]
-udp_port = 5000                # discovery
-tcp_port = 5001                # chat and file transfer
-multicast_port = 5002
-
-[discovery]
-broadcast_address = "255.255.255.255"
-enabled = true
-```
-
-If devices cannot see each other, make sure the UDP and TCP ports above are not blocked by a firewall.
-
 ## Platform setup
 
 Some platform files need manual configuration before release builds work. Full details are in [`docs/PLATFORM_FIXES.md`](docs/PLATFORM_FIXES.md). Summary:
@@ -94,17 +65,6 @@ Some platform files need manual configuration before release builds work. Full d
 - **iOS:** add `NSLocalNetworkUsageDescription` to `Info.plist`.
 - **macOS:** enable the app sandbox with network client/server and file access entitlements. The default receive folder is Downloads, so the Downloads entitlement is needed.
 - **Windows:** allow access on private networks when the Firewall prompts on first launch.
-
-## Troubleshooting
-
-**No devices appear under "Nearby"**
-- Both devices must be on the same LAN. Guest Wi-Fi networks often isolate clients and block discovery.
-- Check that the UDP and TCP ports from `config.toml` are open.
-- Check that **Auto discovery** is enabled in Settings.
-- Pull down on the home screen to search again.
-
-**"Networking could not start"**
-The TCP port is probably already in use. Close the other program or change `tcp_port` in `config.toml`.
 
 ## Project structure
 
@@ -126,7 +86,3 @@ test/                         # Unit and integration tests
 ## Dependencies
 
 `permission_handler`, `fluttertoast`, `toml`, `basic_utils`, `path_provider`, `file_picker`, `crypto`, `cupertino_icons`
-
-## License
-
-No license has been specified yet. Add a `LICENSE` file to let others know how they may use this project.
